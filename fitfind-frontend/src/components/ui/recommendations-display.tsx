@@ -70,10 +70,10 @@ export function RecommendationsDisplay({
         <div className="flex-shrink-0 mb-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-foreground">
-              Found {clothingTypes.length} clothing {clothingTypes.length === 1 ? 'item' : 'items'}
+              Found {backendData ? backendData.summary.total_items : clothingTypes.length} clothing {(backendData ? backendData.summary.total_items : clothingTypes.length) === 1 ? 'item' : 'items'}
             </h3>
             <div className="text-sm text-muted-foreground">
-              {results.length} total products
+              {backendData ? backendData.summary.total_products : results.length} total products
             </div>
           </div>
           

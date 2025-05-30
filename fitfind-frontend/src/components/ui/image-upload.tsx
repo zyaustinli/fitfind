@@ -9,10 +9,11 @@ import type { UploadedImage } from "@/types";
 
 interface ImageUploadProps {
   onImageSelect: (image: UploadedImage) => void;
-  onImageRemove: () => void;
+  onImageRemove?: () => void;
   uploadedImage: UploadedImage | null;
   className?: string;
   disabled?: boolean;
+  showExpandOnly?: boolean; // New prop to control whether to show expand-only mode
 }
 
 export function ImageUpload({ 
@@ -20,9 +21,11 @@ export function ImageUpload({
   onImageRemove, 
   uploadedImage, 
   className,
-  disabled = false 
+  disabled = false,
+  showExpandOnly = false
 }: ImageUploadProps) {
   const [dragActive, setDragActive] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -50,45 +53,97 @@ export function ImageUpload({
 
   const hasError = fileRejections.length > 0;
 
+  const handleImageClick = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+  };
+
   if (uploadedImage) {
     return (
-      <div className={cn("relative", className)}>
-        <div className="relative rounded-xl overflow-hidden border-2 border-border bg-card">
-          <img
-            src={uploadedImage.preview}
-            alt="Uploaded outfit"
-            className="w-full h-auto max-h-96 object-contain"
-          />
-          <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onImageRemove}
-                className="bg-white/90 text-gray-900 hover:bg-white"
-              >
-                <X className="h-4 w-4" />
-                Remove
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                {...getRootProps()}
-                className="bg-white/90 text-gray-900 hover:bg-white"
-              >
-                <Camera className="h-4 w-4" />
-                Replace
-                <input {...getInputProps()} />
-              </Button>
-            </div>
+      <>
+        <div className={cn("relative", className)}>
+          <div 
+            className={cn(
+              "relative rounded-xl overflow-hidden border-2 border-border bg-card transition-colors duration-200",
+              showExpandOnly ? "cursor-pointer hover:border-primary/50" : ""
+            )}
+            onClick={showExpandOnly ? handleImageClick : undefined}
+          >
+            <img
+              src={uploadedImage.preview}
+              alt="Uploaded outfit"
+              className="w-full h-auto max-h-96 object-contain"
+            />
+            
+            {/* Show buttons overlay when NOT in expand-only mode */}
+            {!showExpandOnly && (
+              <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onImageRemove}
+                    className="bg-white/90 text-gray-900 hover:bg-white"
+                  >
+                    <X className="h-4 w-4" />
+                    Remove
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    {...getRootProps()}
+                    className="bg-white/90 text-gray-900 hover:bg-white"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Replace
+                    <input {...getInputProps()} />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Show expand hint when in expand-only mode */}
+            {showExpandOnly && (
+              <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                <div className="opacity-0 hover:opacity-100 transition-opacity duration-200 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-md">
+                  Click to expand
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="mt-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              Your outfit photo is ready for analysis
+            </p>
           </div>
         </div>
-        <div className="mt-3 text-center">
-          <p className="text-sm text-muted-foreground">
-            Your outfit photo is ready for analysis
-          </p>
-        </div>
-      </div>
+
+        {/* Modal for expanded image - only show when in expand-only mode */}
+        {showExpandOnly && isModalOpen && (
+          <div 
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+            onClick={handleModalClose}
+          >
+            <div className="relative max-w-4xl max-h-full">
+              <button
+                onClick={handleModalClose}
+                className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+              <img
+                src={uploadedImage.preview}
+                alt="Uploaded outfit - expanded view"
+                className="max-w-full max-h-full object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

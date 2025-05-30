@@ -74,12 +74,23 @@ def install_python_deps():
     """Install Python dependencies"""
     print("📦 Installing Python dependencies...")
     try:
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 
-                      check=True, capture_output=True)
+        result = subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 
+                      check=True, capture_output=True, text=True)
         print("✅ Python dependencies installed")
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to install Python dependencies: {e}")
+        print("📋 Error details:")
+        if e.stdout:
+            print("STDOUT:")
+            print(e.stdout)
+        if e.stderr:
+            print("STDERR:")
+            print(e.stderr)
+        print("\n💡 Suggestions:")
+        print("   - Try upgrading pip: python -m pip install --upgrade pip")
+        print("   - Check if you have a Python virtual environment activated")
+        print("   - Some packages might need Visual Studio Build Tools on Windows")
         return False
 
 def install_node_deps():

@@ -51,6 +51,7 @@ export interface BackendUploadResponse {
   search_queries: string[];
   cleaned_data: BackendCleanedData;
   conversation_context?: any; // For redo functionality
+  session_id?: string; // Database session ID
   files: {
     csv_file?: string;
     raw_json_file?: string;
@@ -65,6 +66,146 @@ export interface BackendRedoResponse {
   cleaned_data: BackendCleanedData;
   conversation_context: any;
   feedback_used?: string;
+  error?: string;
+}
+
+// Database Entity Types
+export interface ProductDetails {
+  id: string;
+  clothing_item_id: string;
+  external_id: string | null;
+  title: string;
+  price: number | null;
+  old_price: number | null;
+  discount_percentage: number | null;
+  image_url: string | null;
+  product_url: string | null;
+  source: string;
+  source_icon: string | null;
+  rating: number | null;
+  review_count: number | null;
+  delivery_info: string | null;
+  tags: string[];
+  created_at: string;
+}
+
+export interface ClothingItemDetails {
+  id: string;
+  search_session_id: string;
+  query: string;
+  item_type: string;
+  total_products: number;
+  price_range_min: number | null;
+  price_range_max: number | null;
+  price_range_average: number | null;
+  created_at: string;
+  products?: ProductDetails[];
+}
+
+export interface SearchSessionDetails {
+  id: string;
+  user_id: string | null;
+  image_url: string;
+  image_filename: string;
+  file_id: string;
+  status: 'uploading' | 'analyzing' | 'searching' | 'completed' | 'error';
+  search_queries: string[];
+  num_items_identified: number;
+  num_products_found: number;
+  conversation_context: any | null;
+  error_message: string | null;
+  country: string;
+  language: string;
+  created_at: string;
+  updated_at: string;
+  clothing_items?: ClothingItemDetails[];
+}
+
+// Search History Types
+export interface SearchHistoryItem {
+  id: string;
+  user_id: string;
+  search_session_id: string;
+  created_at: string;
+  search_sessions: SearchSessionDetails;
+}
+
+export interface SearchHistoryResponse {
+  success: boolean;
+  history: SearchHistoryItem[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+// Wishlist Types
+export interface WishlistItemDetailed {
+  id: string;
+  user_id: string;
+  product_id: string;
+  notes: string | null;
+  tags: string[];
+  created_at: string;
+  products: ProductDetails;
+}
+
+export interface WishlistResponse {
+  success: boolean;
+  wishlist: WishlistItemDetailed[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+export interface WishlistAddResponse {
+  success: boolean;
+  wishlist_item?: WishlistItemDetailed;
+  error?: string;
+}
+
+export interface WishlistStatusResponse {
+  success: boolean;
+  wishlist_status: Record<string, boolean>;
+  error?: string;
+}
+
+// Pagination and Filtering Types
+export interface PaginationInfo {
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  total_count?: number;
+}
+
+export interface SearchHistoryFilters {
+  searchQuery?: string; // Search within generated search queries (not filenames)
+  sortBy: 'newest' | 'oldest' | 'most_items' | 'most_products';
+}
+
+export interface WishlistFilters {
+  priceRange?: {
+    min: number;
+    max: number;
+  };
+  sources?: string[];
+  tags?: string[];
+  searchQuery?: string; // Search within product titles
+  sortBy: 'newest' | 'oldest' | 'price_low' | 'price_high' | 'rating' | 'title';
+  viewMode: 'grid' | 'list';
+}
+
+// User Profile Types
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  preferences: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserProfileResponse {
+  success: boolean;
+  profile?: UserProfile;
   error?: string;
 }
 
@@ -96,6 +237,7 @@ export interface SearchSession {
   conversationContext?: any; // For redo functionality
   backendData?: BackendCleanedData; // Store original backend data
   fileId?: string; // For redo functionality
+  sessionId?: string; // Database session ID for authenticated users
 }
 
 export interface UploadedImage {
@@ -118,4 +260,63 @@ export interface WishlistItem {
   clothingItem: ClothingItem;
   notes?: string;
   addedAt: Date;
+}
+
+// API Error Types
+export interface ApiErrorResponse {
+  success: false;
+  error: string;
+  details?: any;
+}
+
+// Loading and UI State Types
+export interface LoadingState {
+  isLoading: boolean;
+  message?: string;
+}
+
+export interface ErrorState {
+  hasError: boolean;
+  message?: string;
+  code?: number;
+}
+
+// Bulk Operations Types
+export interface BulkOperation {
+  type: 'delete' | 'export' | 'tag' | 'move';
+  selectedIds: string[];
+  data?: any;
+}
+
+// Statistics and Analytics Types
+export interface SearchHistoryStats {
+  totalSearches: number;
+  successfulSearches: number;
+  totalItemsFound: number;
+  averageItemsPerSearch: number;
+  topSources: Array<{
+    source: string;
+    count: number;
+  }>;
+  searchesByMonth: Array<{
+    month: string;
+    count: number;
+  }>;
+}
+
+export interface WishlistStats {
+  totalItems: number;
+  averagePrice: number;
+  priceRange: {
+    min: number;
+    max: number;
+  };
+  topSources: Array<{
+    source: string;
+    count: number;
+  }>;
+  categoryDistribution: Array<{
+    category: string;
+    count: number;
+  }>;
 } 

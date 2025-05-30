@@ -204,7 +204,7 @@ def redo_search_queries(conversation_context, feedback_message=None):
 3. More specific style details and distinguishing features
 4. Alternative ways to describe the same items that might work better for online shopping searches
 
-Please provide new search queries in the same JSON array format."""
+Please provide new search queries in the same JSON array format. Make sure to include each clothing item in the image as before."""
 
         # Add the feedback to conversation history
         feedback_content = {
@@ -759,46 +759,367 @@ def clean_search_results_for_frontend(raw_search_results):
         }
     }
 
-
 def extract_item_type_from_query(query):
     """
-    Extract the clothing item type from a search query
+    Extract the clothing item type from a search query with comprehensive coverage
     
     Parameters:
     - query: Search query string
     
     Returns:
-    - String representing the item type (e.g., 'blouse', 'skirt', 'dress')
+    - String representing the item type
     """
     if not query:
         return "unknown"
     
-    # Common clothing item keywords to look for
-    clothing_items = [
-        'blouse', 'shirt', 'top', 'sweater', 'cardigan', 'jacket', 'blazer',
-        'skirt', 'dress', 'pants', 'trousers', 'jeans', 'shorts',
-        'coat', 'vest', 'tunic', 'hoodie', 'turtleneck', 'tank',
-        'jumpsuit', 'romper', 'bodysuit', 'camisole'
+    query_lower = query.lower().strip()
+    
+    # Comprehensive multi-word patterns (most specific first)
+    multi_word_patterns = [
+        # Tops - specific patterns
+        ('tank top', 'tank_top'),
+        ('tube top', 'tube_top'),
+        ('crop top', 'crop_top'),
+        ('halter top', 'halter_top'),
+        ('mock neck', 'turtleneck'),
+        ('cowl neck', 'sweater'),
+        ('v-neck', 'shirt'),
+        ('crew neck', 'shirt'),
+        ('crewneck', 'shirt'),
+        
+        # Outerwear patterns
+        ('leather jacket', 'leather_jacket'),
+        ('denim jacket', 'denim_jacket'),
+        ('jean jacket', 'denim_jacket'),
+        ('bomber jacket', 'bomber_jacket'),
+        ('puffer jacket', 'puffer_jacket'),
+        ('down jacket', 'puffer_jacket'),
+        ('track jacket', 'track_jacket'),
+        ('varsity jacket', 'varsity_jacket'),
+        ('rain jacket', 'raincoat'),
+        ('trench coat', 'trench_coat'),
+        ('pea coat', 'peacoat'),
+        ('duffle coat', 'coat'),
+        
+        # Bottoms - specific patterns
+        ('cargo pants', 'cargo_pants'),
+        ('cargo shorts', 'cargo_shorts'),
+        ('yoga pants', 'yoga_pants'),
+        ('track pants', 'track_pants'),
+        ('sweat pants', 'sweatpants'),
+        ('palazzo pants', 'palazzo_pants'),
+        ('wide leg pants', 'wide_leg_pants'),
+        ('straight leg pants', 'pants'),
+        ('skinny jeans', 'skinny_jeans'),
+        ('slim jeans', 'jeans'),
+        ('boyfriend jeans', 'jeans'),
+        ('mom jeans', 'jeans'),
+        ('bootcut jeans', 'jeans'),
+        ('bermuda shorts', 'bermuda_shorts'),
+        ('board shorts', 'board_shorts'),
+        ('bike shorts', 'bike_shorts'),
+        ('cycling shorts', 'bike_shorts'),
+        ('running shorts', 'athletic_shorts'),
+        ('athletic shorts', 'athletic_shorts'),
+        ('denim shorts', 'denim_shorts'),
+        ('jean shorts', 'denim_shorts'),
+        
+        # Skirts - specific patterns
+        ('pencil skirt', 'pencil_skirt'),
+        ('a-line skirt', 'a_line_skirt'),
+        ('a line skirt', 'a_line_skirt'),
+        ('circle skirt', 'circle_skirt'),
+        ('pleated skirt', 'pleated_skirt'),
+        ('wrap skirt', 'wrap_skirt'),
+        ('mini skirt', 'mini_skirt'),
+        ('midi skirt', 'midi_skirt'),
+        ('maxi skirt', 'maxi_skirt'),
+        
+        # Dresses - specific patterns
+        ('cocktail dress', 'cocktail_dress'),
+        ('evening dress', 'evening_dress'),
+        ('ball gown', 'gown'),
+        ('sheath dress', 'sheath_dress'),
+        ('shift dress', 'shift_dress'),
+        ('wrap dress', 'wrap_dress'),
+        ('shirt dress', 'shirt_dress'),
+        ('sweater dress', 'sweater_dress'),
+        ('jumper dress', 'jumper_dress'),
+        ('slip dress', 'slip_dress'),
+        ('bodycon dress', 'bodycon_dress'),
+        ('fit and flare dress', 'fit_and_flare_dress'),
+        ('a-line dress', 'a_line_dress'),
+        ('a line dress', 'a_line_dress'),
+        ('maxi dress', 'maxi_dress'),
+        ('midi dress', 'midi_dress'),
+        ('mini dress', 'mini_dress'),
+        ('sun dress', 'sundress'),
+        
+        # Formal wear
+        ('dress shirt', 'dress_shirt'),
+        ('button down', 'button_down'),
+        ('button up', 'button_down'),
+        ('oxford shirt', 'oxford_shirt'),
+        ('polo shirt', 'polo'),
+        ('rugby shirt', 'rugby_shirt'),
+        
+        # Athletic wear
+        ('sports bra', 'sports_bra'),
+        ('compression shirt', 'compression_shirt'),
+        ('rash guard', 'rashguard'),
+        ('swim trunks', 'swim_trunks'),
+        ('swim shorts', 'swim_shorts'),
+        ('bathing suit', 'swimsuit'),
+        ('swimming costume', 'swimsuit'),
+        
+        # Footwear - specific patterns
+        ('running shoes', 'running_shoes'),
+        ('tennis shoes', 'sneakers'),
+        ('athletic shoes', 'sneakers'),
+        ('high tops', 'high_tops'),
+        ('low tops', 'sneakers'),
+        ('high heels', 'heels'),
+        ('kitten heels', 'heels'),
+        ('block heels', 'heels'),
+        ('ankle boots', 'ankle_boots'),
+        ('knee high boots', 'knee_high_boots'),
+        ('over the knee boots', 'over_knee_boots'),
+        ('thigh high boots', 'thigh_high_boots'),
+        ('cowboy boots', 'cowboy_boots'),
+        ('combat boots', 'combat_boots'),
+        ('work boots', 'work_boots'),
+        ('hiking boots', 'hiking_boots'),
+        ('rain boots', 'rain_boots'),
+        ('snow boots', 'snow_boots'),
+        ('chelsea boots', 'chelsea_boots'),
+        ('desert boots', 'desert_boots'),
+        ('chukka boots', 'chukka_boots'),
+        ('ugg boots', 'uggs'),
+        ('boat shoes', 'boat_shoes'),
+        ('deck shoes', 'boat_shoes'),
+        ('driving shoes', 'loafers'),
+        ('penny loafers', 'loafers'),
+        ('ballet flats', 'flats'),
+        ('flip flops', 'flip_flops'),
+        ('gladiator sandals', 'sandals'),
+        
+        # Accessories
+        ('baseball cap', 'baseball_cap'),
+        ('trucker hat', 'trucker_hat'),
+        ('bucket hat', 'bucket_hat'),
+        ('sun hat', 'sun_hat'),
+        ('winter hat', 'beanie'),
+        ('knit hat', 'beanie'),
+        ('bow tie', 'bow_tie'),
+        ('fanny pack', 'fanny_pack'),
+        ('waist pack', 'fanny_pack'),
+        ('belt bag', 'belt_bag'),
+        ('cross body bag', 'crossbody_bag'),
+        ('crossbody bag', 'crossbody_bag'),
+        ('shoulder bag', 'shoulder_bag'),
+        ('tote bag', 'tote'),
+        ('messenger bag', 'messenger_bag'),
+        
+        # Underwear/intimates
+        ('boxer briefs', 'boxer_briefs'),
+        ('sports bra', 'sports_bra'),
+        ('boy shorts', 'boyshorts'),
+        
+        # One-pieces
+        ('one piece', 'bodysuit'),
+        ('two piece', 'bikini'),
     ]
     
-    query_lower = query.lower()
+    # Check multi-word patterns first
+    for pattern, item_type in multi_word_patterns:
+        if pattern in query_lower:
+            return item_type
     
-    # Look for clothing item keywords in the query
+    # Comprehensive single-word clothing items (ordered by specificity)
+    clothing_items = [
+        # Outerwear (check before generic "coat" or "jacket")
+        'parka', 'anorak', 'windbreaker', 'raincoat', 'peacoat', 'overcoat',
+        'blazer', 'puffer', 'bomber', 'varsity', 'mackintosh', 'slicker',
+        
+        # Specific tops (before generic "top" or "shirt")
+        'hoodie', 'hoody', 'sweatshirt', 'sweater', 'jumper', 'pullover',
+        'cardigan', 'cardi', 'shrug', 'bolero', 'turtleneck', 'henley',
+        'polo', 'tunic', 'camisole', 'cami', 'blouse', 'bodysuit', 'leotard',
+        'unitard', 'jersey', 'fleece', 'thermal', 'rashguard',
+        
+        # Dresses and one-pieces
+        'dress', 'gown', 'sundress', 'pinafore', 'smock', 'frock',
+        'jumpsuit', 'romper', 'playsuit', 'onesie', 'catsuit',
+        'coveralls', 'overalls', 'dungarees', 'shortalls',
+        
+        # Specific bottoms (before generic "pants")
+        'jeans', 'denim', 'chinos', 'khakis', 'corduroys', 'cords',
+        'culottes', 'gauchos', 'joggers', 'sweatpants', 'sweats',
+        'leggings', 'tights', 'jeggings', 'treggings', 'capris',
+        'trousers', 'slacks', 'britches', 'knickers',
+        
+        # Shorts
+        'shorts', 'bermudas', 'jorts', 'cutoffs',
+        
+        # Skirts
+        'skirt', 'kilt', 'sarong', 'tutu', 'petticoat',
+        
+        # Underwear/Intimates
+        'underwear', 'panties', 'briefs', 'boxers', 'thong', 'boyshorts',
+        'bra', 'brassiere', 'bralette', 'bustier', 'corset', 'basque',
+        'slip', 'chemise', 'teddy', 'negligee', 'lingerie',
+        
+        # Sleepwear
+        'pajamas', 'pyjamas', 'pjs', 'nightgown', 'nightie', 'nightshirt',
+        'robe', 'bathrobe', 'housecoat', 'dressing gown',
+        
+        # Swimwear
+        'swimsuit', 'bikini', 'tankini', 'monokini', 'wetsuit', 'swimwear',
+        
+        # Footwear
+        'shoes', 'sneakers', 'trainers', 'runners', 'kicks',
+        'boots', 'booties', 'wellies', 'uggs', 'wellingtons',
+        'heels', 'stilettos', 'pumps', 'platforms', 'wedges',
+        'flats', 'espadrilles', 'mules', 'clogs', 'slides',
+        'sandals', 'flip-flops', 'thongs', 'huaraches', 'birkenstocks',
+        'loafers', 'moccasins', 'oxfords', 'brogues', 'derbies',
+        'cleats', 'spikes',
+        
+        # Accessories
+        'hat', 'cap', 'beanie', 'beret', 'fedora', 'trilby', 'panama',
+        'bowler', 'sombrero', 'fascinator', 'headband', 'headscarf',
+        'turban', 'visor', 'snapback', 'stetson',
+        'scarf', 'tie', 'necktie', 'ascot', 'cravat', 'bandana',
+        'gloves', 'mittens', 'gauntlets',
+        'belt', 'sash', 'cummerbund', 'suspenders', 'braces',
+        'bag', 'purse', 'handbag', 'clutch', 'wristlet', 'wallet',
+        'backpack', 'rucksack', 'satchel', 'tote', 'briefcase',
+        
+        # Traditional/Cultural
+        'sari', 'saree', 'kimono', 'yukata', 'cheongsam', 'qipao',
+        'dirndl', 'lederhosen', 'poncho', 'serape', 'dashiki', 'kaftan',
+        'thobe', 'abaya', 'hijab', 'burqa', 'niqab', 'dhoti', 'lungi',
+        'hanbok', 'kente',
+        
+        # Formal
+        'suit', 'tuxedo', 'tux', 'waistcoat', 'vest', 'gilet',
+        
+        # Generic terms (last)
+        'jacket', 'coat', 'top', 'shirt', 'pants', 'garment', 'apparel'
+    ]
+    
+    # Check for plural forms and exact matches
+    words = query_lower.split()
+    
+    # First check exact word matches (including plurals)
+    for word in words:
+        # Remove common punctuation
+        clean_word = re.sub(r'[^\w\s-]', '', word)
+        
+        # Check singular form
+        if clean_word in clothing_items:
+            return clean_word
+        
+        # Check if it's a plural form
+        if clean_word.endswith('s') and clean_word[:-1] in clothing_items:
+            return clean_word[:-1]
+        
+        # Check irregular plurals
+        irregular_plurals = {
+            'scarves': 'scarf',
+            'gloves': 'glove',
+            'clothes': 'clothing',
+            'jeans': 'jeans',  # already plural
+            'pants': 'pants',  # already plural
+            'shorts': 'shorts',  # already plural
+            'tights': 'tights',  # already plural
+            'glasses': 'glasses',  # already plural
+        }
+        if clean_word in irregular_plurals:
+            return irregular_plurals[clean_word]
+    
+    # Then check for items within compound words
     for item in clothing_items:
         if item in query_lower:
             return item
     
-    # If no specific item found, try to extract from common patterns
-    words = query_lower.split()
+    # Look for gender-specific patterns
+    gender_markers = ['women\'s', 'womens', 'women\'s', 'men\'s', 'mens', 'men\'s', 
+                      'girls', 'boys', 'ladies', 'unisex', 'kids', 'children\'s', 'childrens']
     
-    # Look for patterns like "women's [item]" or "men's [item]"
     for i, word in enumerate(words):
-        if word in ["women's", "men's", "womens", "mens"] and i + 1 < len(words):
+        if word in gender_markers and i + 1 < len(words):
             next_word = words[i + 1]
-            if next_word not in ['vintage', 'casual', 'formal', 'summer', 'winter']:
-                return next_word
+            # Skip common modifiers
+            modifiers = ['vintage', 'casual', 'formal', 'summer', 'winter', 'spring', 'fall',
+                        'designer', 'luxury', 'cheap', 'discount', 'new', 'used', 'small',
+                        'medium', 'large', 'xl', 'xxl', 'plus', 'size', 'petite', 'tall']
+            
+            j = i + 1
+            while j < len(words) and words[j] in modifiers:
+                j += 1
+            
+            if j < len(words):
+                potential_item = words[j]
+                # Check if it's a clothing item
+                if potential_item in clothing_items:
+                    return potential_item
+                # Check singular form
+                if potential_item.endswith('s') and potential_item[:-1] in clothing_items:
+                    return potential_item[:-1]
     
-    return "clothing"
+    # If query contains clothing-related terms but no specific item
+    clothing_indicators = ['wear', 'outfit', 'apparel', 'garment', 'attire', 'clothing', 'fashion']
+    for indicator in clothing_indicators:
+        if indicator in query_lower:
+            return 'clothing'
+    
+    # Default return
+    return 'clothing'
+
+
+def normalize_item_type(item_type):
+    """
+    Optionally normalize specific item types to broader categories
+    
+    Parameters:
+    - item_type: The specific item type extracted
+    
+    Returns:
+    - Normalized category string
+    """
+    normalizations = {
+        # Normalize all shoe types to 'shoes'
+        'sneakers': 'shoes', 'trainers': 'shoes', 'runners': 'shoes',
+        'heels': 'shoes', 'stilettos': 'shoes', 'pumps': 'shoes',
+        'platforms': 'shoes', 'wedges': 'shoes', 'flats': 'shoes',
+        'loafers': 'shoes', 'moccasins': 'shoes', 'oxfords': 'shoes',
+        'brogues': 'shoes', 'derbies': 'shoes', 'espadrilles': 'shoes',
+        'mules': 'shoes', 'clogs': 'shoes', 'slides': 'shoes',
+        'sandals': 'shoes', 'flip-flops': 'shoes', 'thongs': 'shoes',
+        
+        # Normalize all boot types to 'boots'
+        'booties': 'boots', 'wellies': 'boots', 'uggs': 'boots',
+        
+        # Normalize jacket types
+        'blazer': 'jacket', 'bomber': 'jacket', 'puffer': 'jacket',
+        'varsity': 'jacket', 'windbreaker': 'jacket',
+        
+        # Normalize coat types
+        'parka': 'coat', 'peacoat': 'coat', 'overcoat': 'coat',
+        'raincoat': 'coat', 'anorak': 'coat',
+        
+        # Normalize pants types
+        'jeans': 'pants', 'chinos': 'pants', 'khakis': 'pants',
+        'trousers': 'pants', 'slacks': 'pants', 'joggers': 'pants',
+        'sweatpants': 'pants', 'leggings': 'pants', 'tights': 'pants',
+        
+        # Normalize underwear
+        'panties': 'underwear', 'briefs': 'underwear', 'boxers': 'underwear',
+        'thong': 'underwear', 'boyshorts': 'underwear',
+    }
+    
+    return normalizations.get(item_type, item_type)
 
 
 def clean_single_product(product):

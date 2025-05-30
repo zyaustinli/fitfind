@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitFind - Outfit Recommendation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .notice {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .links {
+            margin: 20px 0;
+        }
+        .links a {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .links a:hover {
+            background: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 FitFind - Outfit Recommendation</h1>
+    
+    <div class="notice">
+        <h2>Backend API Server</h2>
+        <p>This is the backend API server for FitFind. The main application frontend is built with Next.js.</p>
+        <p>For the full experience, please use the Next.js frontend at <strong>http://localhost:3000</strong></p>
+    </div>
+
+    <div class="links">
+        <a href="http://localhost:3000" target="_blank">Open Frontend App</a>
+        <a href="/api/health">API Health Check</a>
+    </div>
+
+    <div class="notice">
+        <h3>API Endpoints</h3>
+        <ul style="text-align: left; display: inline-block;">
+            <li><strong>POST /api/upload</strong> - Upload outfit images</li>
+            <li><strong>POST /api/redo</strong> - Redo search with feedback</li>
+            <li><strong>GET /api/results/&lt;file_id&gt;</strong> - Get search results</li>
+            <li><strong>GET /api/health</strong> - Health check</li>
+            <li><strong>Authentication endpoints:</strong> /api/auth/*</li>
+            <li><strong>Wishlist endpoints:</strong> /api/wishlist/*</li>
+            <li><strong>History endpoints:</strong> /api/history</li>
+        </ul>
+    </div>
+
+    <div class="notice">
+        <h3>Development Setup</h3>
+        <p>To start both backend and frontend servers:</p>
+        <code>python start_dev.py</code>
+    </div>
+</body>
+</html> 

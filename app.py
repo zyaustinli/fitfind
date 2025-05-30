@@ -1,4 +1,8 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+# Load environment variables first, before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import Flask, request, jsonify, render_template, send_from_directory, g
 from flask_cors import CORS
 import os
 import uuid
@@ -7,6 +11,10 @@ import json
 from search_recommendation import outfit_recommendation_with_cleaned_data
 import traceback
 from datetime import datetime
+
+# Import database and auth services
+from database_service import db_service
+from auth_middleware import require_auth, optional_auth, get_current_user, get_current_user_id, is_authenticated
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -29,12 +37,321 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def setup_db_context():
+    """Helper function to set up database context for authenticated requests"""
+    if hasattr(g, 'auth_token') and g.auth_token:
+        # Set the user context in the database service for RLS
+        try:
+            db_service.set_user_context(g.auth_token)
+        except Exception as e:
+            print(f"Warning: Failed to set database user context: {e}")
+
 @app.route('/')
 def index():
     """Serve the main frontend page"""
     return render_template('index.html')
 
+# Authentication and User Management Endpoints
+
+@app.route('/api/auth/status', methods=['GET'])
+@optional_auth
+def auth_status():
+    """Check authentication status and user info"""
+    user = get_current_user()
+    return jsonify({
+        'authenticated': user is not None,
+        'user': user,
+        'has_profile': False if not user else db_service.get_user_profile(user['id']) is not None
+    })
+
+@app.route('/api/auth/profile', methods=['GET'])
+@require_auth
+def get_profile():
+    """Get current user's profile"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        profile = db_service.get_user_profile(user_id)
+        
+        if not profile:
+            # Create profile if it doesn't exist
+            user = get_current_user()
+            profile = db_service.create_user_profile(
+                user_id=user_id,
+                email=user.get('email'),
+                full_name=user.get('user_metadata', {}).get('full_name') or user.get('full_name')
+            )
+        
+        return jsonify({
+            'success': True,
+            'profile': profile
+        })
+    except Exception as e:
+        print(f"Error getting profile: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting profile: {str(e)}'
+        }), 500
+
+@app.route('/api/auth/profile', methods=['PUT'])
+@require_auth
+def update_profile():
+    """Update current user's profile"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Only allow updating certain fields
+        allowed_fields = ['full_name', 'avatar_url', 'preferences']
+        updates = {k: v for k, v in data.items() if k in allowed_fields}
+        
+        if not updates:
+            return jsonify({
+                'success': False,
+                'error': 'No valid fields to update'
+            }), 400
+        
+        profile = db_service.update_user_profile(user_id, updates)
+        
+        return jsonify({
+            'success': True,
+            'profile': profile
+        })
+    except Exception as e:
+        print(f"Error updating profile: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error updating profile: {str(e)}'
+        }), 500
+
+# Search History Endpoints
+
+@app.route('/api/history', methods=['GET'])
+@require_auth
+def get_search_history():
+    """Get user's search history"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        history = db_service.get_user_search_history(user_id, limit, offset)
+        
+        # Get total count for better pagination
+        total_count_response = db_service.client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).execute()
+        total_count = total_count_response.count or 0
+        
+        return jsonify({
+            'success': True,
+            'history': history,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'has_more': len(history) == limit,
+                'total_count': total_count
+            }
+        })
+    except Exception as e:
+        print(f"Error getting search history: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting search history: {str(e)}'
+        }), 500
+
+# Wishlist Endpoints
+
+@app.route('/api/wishlist', methods=['GET'])
+@require_auth
+def get_wishlist():
+    """Get user's wishlist"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        wishlist = db_service.get_user_wishlist(user_id, limit, offset)
+        total_count = db_service.get_wishlist_count(user_id)
+        
+        return jsonify({
+            'success': True,
+            'wishlist': wishlist,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'has_more': len(wishlist) == limit,
+                'total_count': total_count
+            }
+        })
+    except Exception as e:
+        print(f"Error getting wishlist: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting wishlist: {str(e)}'
+        }), 500
+
+@app.route('/api/wishlist/add', methods=['POST'])
+@require_auth
+def add_to_wishlist():
+    """Add item to user's wishlist"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        product_id = data.get('product_id')
+        notes = data.get('notes')
+        tags = data.get('tags', [])
+        
+        if not product_id:
+            return jsonify({
+                'success': False,
+                'error': 'Product ID is required'
+            }), 400
+        
+        # Validate product_id format (should be UUID)
+        try:
+            uuid.UUID(product_id)
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid product ID format'
+            }), 400
+        
+        # Check wishlist limit
+        if not db_service.check_wishlist_limit(user_id):
+            return jsonify({
+                'success': False,
+                'error': 'Wishlist limit reached (maximum 1000 items)'
+            }), 429  # Too Many Requests
+        
+        # Check if already in wishlist first (faster check)
+        if db_service.is_item_in_wishlist(user_id, product_id):
+            return jsonify({
+                'success': False,
+                'error': 'Item already in wishlist'
+            }), 409
+        
+        wishlist_item = db_service.add_to_wishlist(user_id, product_id, notes, tags)
+        
+        if wishlist_item is None:
+            # Check if product exists to give specific error
+            from supabase import create_client
+            supabase_client = create_client(
+                os.getenv("SUPABASE_URL"),
+                os.getenv("SUPABASE_ANON_KEY")
+            )
+            product_check = supabase_client.table("products").select("id").eq("id", product_id).execute()
+            
+            if not product_check.data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Product not found'
+                }), 404
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to add item to wishlist'
+                }), 500
+        
+        return jsonify({
+            'success': True,
+            'wishlist_item': wishlist_item
+        })
+    except Exception as e:
+        print(f"Error adding to wishlist: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error adding to wishlist: {str(e)}'
+        }), 500
+
+@app.route('/api/wishlist/remove', methods=['POST'])
+@require_auth
+def remove_from_wishlist():
+    """Remove item from user's wishlist"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        product_id = data.get('product_id')
+        if not product_id:
+            return jsonify({
+                'success': False,
+                'error': 'Product ID is required'
+            }), 400
+        
+        success = db_service.remove_from_wishlist(user_id, product_id)
+        
+        return jsonify({
+            'success': success
+        })
+    except Exception as e:
+        print(f"Error removing from wishlist: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error removing from wishlist: {str(e)}'
+        }), 500
+
+@app.route('/api/wishlist/check', methods=['POST'])
+@require_auth
+def check_wishlist_status():
+    """Check if items are in user's wishlist"""
+    try:
+        setup_db_context()
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        product_ids = data.get('product_ids', [])
+        if not product_ids:
+            return jsonify({
+                'success': False,
+                'error': 'Product IDs are required'
+            }), 400
+        
+        wishlist_status = {}
+        for product_id in product_ids:
+            wishlist_status[product_id] = db_service.is_item_in_wishlist(user_id, product_id)
+        
+        return jsonify({
+            'success': True,
+            'wishlist_status': wishlist_status
+        })
+    except Exception as e:
+        print(f"Error checking wishlist status: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error checking wishlist status: {str(e)}'
+        }), 500
+
 @app.route('/api/upload', methods=['POST'])
+@optional_auth
 def upload_file():
     """Handle outfit image upload and process recommendations"""
     try:
@@ -63,6 +380,31 @@ def upload_file():
             country = request.form.get('country', 'us')
             language = request.form.get('language', 'en')
             
+            # Create database session (for both authenticated and anonymous users)
+            session_record = None
+            user_id = get_current_user_id()
+            image_url = f"/uploads/{unique_filename}"
+            
+            if user_id:
+                # Authenticated user
+                session_record = db_service.create_search_session(
+                    user_id=user_id,
+                    file_id=file_id,
+                    image_filename=filename,
+                    image_url=image_url,
+                    country=country,
+                    language=language
+                )
+            else:
+                # Anonymous user - create anonymous session
+                session_record = db_service.create_anonymous_search_session(
+                    file_id=file_id,
+                    image_filename=filename,
+                    image_url=image_url,
+                    country=country,
+                    language=language
+                )
+            
             # Generate output paths
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_output_path = os.path.join(app.config['RESULTS_FOLDER'], f"results_{file_id}_{timestamp}")
@@ -81,10 +423,44 @@ def upload_file():
             
             # Check for errors
             if "error" in result:
+                # Update session status if exists
+                if session_record:
+                    db_service.update_search_session(session_record['id'], {
+                        'status': 'error',
+                        'error_message': result["error"]
+                    })
+                
+                # Determine appropriate status code based on error type
+                error_message = result["error"]
+                if "No clothing items identified" in error_message:
+                    status_code = 422  # Unprocessable Entity - valid request but can't process the image
+                elif "API key" in error_message or "environment" in error_message:
+                    status_code = 500  # Server configuration error
+                else:
+                    status_code = 400  # Bad request
+                
                 return jsonify({
-                    'error': result["error"],
+                    'success': False,
+                    'error': error_message,
                     'file_id': file_id
-                }), 500
+                }), status_code
+            
+            # Save results to database if user is authenticated
+            if session_record and result.get('cleaned_data'):
+                # Update session with results
+                session_updates = {
+                    'status': 'completed',
+                    'search_queries': result.get('search_queries', []),
+                    'num_items_identified': result.get('num_items_identified', 0),
+                    'num_products_found': result.get('num_products_found', 0),
+                    'conversation_context': result.get('conversation_context', {})
+                }
+                db_service.update_search_session(session_record['id'], session_updates)
+                
+                # Save clothing items and products
+                clothing_items = result.get('cleaned_data', {}).get('clothing_items', [])
+                if clothing_items:
+                    db_service.save_clothing_items(session_record['id'], clothing_items)
             
             # Prepare conversation context for JSON serialization (remove image_bytes)
             conversation_context = result.get('conversation_context')
@@ -102,6 +478,7 @@ def upload_file():
                 'search_queries': result.get('search_queries', []),
                 'cleaned_data': result.get('cleaned_data', {}),
                 'conversation_context': conversation_context,  # For redo functionality
+                'session_id': session_record['id'] if session_record else None,
                 'files': {
                     'csv_file': result.get('results_saved_to'),
                     'raw_json_file': result.get('raw_results_saved_to'),
@@ -124,6 +501,7 @@ def upload_file():
         }), 500
 
 @app.route('/api/redo', methods=['POST'])
+@optional_auth
 def redo_search():
     """Handle redo search requests with custom feedback"""
     try:
@@ -135,6 +513,7 @@ def redo_search():
         conversation_context = data['conversation_context']
         feedback_message = data.get('feedback_message')
         file_id = data.get('file_id')  # We need the file_id to reconstruct image_bytes
+        session_id = data.get('session_id')  # Database session ID
         
         # If conversation_context doesn't have image_bytes, we need to reconstruct it
         if conversation_context and 'image_bytes' not in conversation_context and file_id:
@@ -143,9 +522,9 @@ def redo_search():
                            if f.startswith(file_id)]
             if upload_files:
                 image_path = os.path.join(app.config['UPLOAD_FOLDER'], upload_files[0])
-                # Read and encode the image
-                from search_recommendation import encode_image
-                image_bytes = encode_image(image_path)
+                # Read the raw image bytes (not base64 encoded)
+                with open(image_path, "rb") as image_file:
+                    image_bytes = image_file.read()
                 conversation_context['image_bytes'] = image_bytes
         
         # Import the redo function
@@ -175,6 +554,21 @@ def redo_search():
         # Clean the results
         cleaned_data = clean_search_results_for_frontend(search_results)
         
+        # Update database session if user is authenticated and session_id provided
+        user_id = get_current_user_id()
+        if user_id and session_id:
+            session_updates = {
+                'search_queries': new_queries,
+                'num_products_found': cleaned_data.get('summary', {}).get('total_products', 0),
+                'conversation_context': redo_result
+            }
+            db_service.update_search_session(session_id, session_updates)
+            
+            # Save new clothing items and products
+            clothing_items = cleaned_data.get('clothing_items', [])
+            if clothing_items:
+                db_service.save_clothing_items(session_id, clothing_items)
+        
         # Prepare conversation context for JSON serialization (remove image_bytes)
         updated_conversation_context = redo_result
         if updated_conversation_context and 'image_bytes' in updated_conversation_context:
@@ -200,10 +594,38 @@ def redo_search():
         }), 500
 
 @app.route('/api/results/<file_id>')
+@optional_auth
 def get_results(file_id):
     """Get results for a specific file ID"""
     try:
-        # Look for cleaned results file
+        user_id = get_current_user_id()
+        
+        # If user is authenticated, try to get from database first
+        if user_id:
+            session = db_service.get_search_session_by_file_id(file_id)
+            if session and session['user_id'] == user_id:
+                # Get complete session with items and products
+                complete_session = db_service.get_session_with_items_and_products(session['id'])
+                if complete_session:
+                    # Transform database format to frontend format
+                    cleaned_data = {
+                        'clothing_items': complete_session.get('clothing_items', []),
+                        'summary': {
+                            'total_items': len(complete_session.get('clothing_items', [])),
+                            'total_products': complete_session.get('num_products_found', 0),
+                            'has_errors': False,
+                            'error_items': []
+                        }
+                    }
+                    
+                    return jsonify({
+                        'success': True,
+                        'cleaned_data': cleaned_data,
+                        'file_id': file_id,
+                        'session': complete_session
+                    })
+        
+        # Fallback to file-based results
         results_files = [f for f in os.listdir(app.config['RESULTS_FOLDER']) 
                         if f.startswith(f"results_{file_id}") and f.endswith('_cleaned.json')]
         
@@ -239,18 +661,41 @@ def result_file(filename):
 
 @app.route('/api/health')
 def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'upload_folder': app.config['UPLOAD_FOLDER'],
-        'results_folder': app.config['RESULTS_FOLDER']
-    })
+    """Health check endpoint with database status"""
+    try:
+        # Check database health
+        db_health = db_service.health_check()
+        
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'upload_folder': app.config['UPLOAD_FOLDER'],
+            'results_folder': app.config['RESULTS_FOLDER'],
+            'database': db_health
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e),
+            'database': {
+                'status': 'unhealthy',
+                'error': str(e)
+            }
+        }), 500
 
 if __name__ == '__main__':
     print("Starting FitFind Outfit Recommendation Server...")
     print(f"Upload folder: {UPLOAD_FOLDER}")
     print(f"Results folder: {RESULTS_FOLDER}")
     print("Server will be available at: http://localhost:5000")
+    
+    # Test database connection on startup
+    try:
+        db_health = db_service.health_check()
+        print(f"Database status: {db_health['status']}")
+    except Exception as e:
+        print(f"Warning: Database connection failed: {e}")
+        print("Server will start but database features will be unavailable")
     
     app.run(debug=True, host='0.0.0.0', port=5000) 
