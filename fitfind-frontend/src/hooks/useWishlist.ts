@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   WishlistItemDetailed, 
   WishlistResponse, 
@@ -16,6 +16,7 @@ import {
   checkWishlistStatus 
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStableFetch } from './useStableFetch';
 
 export interface UseWishlistOptions {
   autoFetch?: boolean;
@@ -83,20 +84,31 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     code: undefined
   });
 
+  const mountedRef = useRef(true);
+  const fetchingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
-  const fetchWishlist = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (!user) {
-      setWishlist([]);
-      setWishlistStatus({});
+  const fetchWishlistImpl = useCallback(async (options: { reset?: boolean } = {}) => {
+    if (!user || fetchingRef.current) {
+      console.log('Skipping wishlist fetch: no user or already fetching');
       return;
     }
 
     const { reset = false } = options;
     const currentOffset = reset ? 0 : pagination.offset;
     
+    fetchingRef.current = true;
     setLoading({
       isLoading: true,
       message: reset ? 'Loading wishlist...' : 'Loading more...'
@@ -108,6 +120,11 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         pagination.limit,
         currentOffset
       );
+
+      if (!mountedRef.current) {
+        console.log('Component unmounted, skipping wishlist state update');
+        return;
+      }
 
       if (response.success) {
         const newItems = response.wishlist;
@@ -124,6 +141,8 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         throw new Error(response.error || 'Failed to fetch wishlist');
       }
     } catch (err) {
+      if (!mountedRef.current) return;
+      
       const message = err instanceof Error ? err.message : 'Failed to load wishlist';
       setError({
         hasError: true,
@@ -131,9 +150,15 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         code: undefined
       });
     } finally {
-      setLoading({ isLoading: false });
+      if (mountedRef.current) {
+        setLoading({ isLoading: false });
+        fetchingRef.current = false;
+      }
     }
-  }, [user, pagination.limit, pagination.offset, clearError]);
+  }, [user?.id, pagination.limit]); // Only depend on user.id, not the whole user object
+
+  // Use stable fetch
+  const fetchWishlist = useStableFetch(fetchWishlistImpl, [user?.id, pagination.limit]);
 
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
@@ -392,24 +417,47 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   const isEmpty = wishlist.length === 0 && !loading.isLoading;
   const totalCount = pagination.total_count || 0;
 
-  // Auto-fetch on mount and when user changes
+  // Initial fetch effect
   useEffect(() => {
-    if (autoFetch && user && !authLoading) {
-      fetchWishlist({ reset: true });
-    } else if (!user) {
+    if (!autoFetch) return;
+    
+    // Skip if auth is still loading
+    if (authLoading) {
+      console.log('Auth still loading, skipping wishlist fetch');
+      return;
+    }
+
+    // Clear data if no user
+    if (!user) {
+      console.log('No user, clearing wishlist data');
       setWishlist([]);
       setWishlistStatus({});
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
+      hasInitializedRef.current = false;
+      return;
     }
-  }, [user, authLoading, autoFetch]); // Removed fetchWishlist from deps to avoid infinite loop
+
+    // Only fetch if we haven't initialized for this user
+    if (!hasInitializedRef.current) {
+      console.log('Initial wishlist fetch for user:', user.id);
+      hasInitializedRef.current = true;
+      fetchWishlist({ reset: true });
+    }
+  }, [user?.id, authLoading, autoFetch, fetchWishlist]);
+
+  // Reset initialization flag when user changes
+  useEffect(() => {
+    hasInitializedRef.current = false;
+  }, [user?.id]);
 
   // Re-fetch when sort filters change (for server-side sorting)
   useEffect(() => {
-    if (user && (filters.sortBy === 'newest' || filters.sortBy === 'oldest')) {
+    if (user && hasInitializedRef.current && (filters.sortBy === 'newest' || filters.sortBy === 'oldest')) {
       // These might require server-side sorting, so refetch
+      console.log('Sort filter changed, refetching wishlist');
       fetchWishlist({ reset: true });
     }
-  }, [filters.sortBy, user]); // Removed fetchWishlist from deps
+  }, [filters.sortBy, user?.id, fetchWishlist]);
 
   return {
     // Data

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   SearchHistoryItem, 
   SearchHistoryResponse, 
@@ -9,6 +9,7 @@ import {
 } from '@/types';
 import { getSearchHistory } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStableFetch } from './useStableFetch';
 
 export interface UseSearchHistoryOptions {
   autoFetch?: boolean;
@@ -68,19 +69,31 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     code: undefined
   });
 
+  const mountedRef = useRef(true);
+  const fetchingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
-  const fetchHistory = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (!user) {
-      setHistory([]);
+  const fetchHistoryImpl = useCallback(async (options: { reset?: boolean } = {}) => {
+    if (!user || fetchingRef.current) {
+      console.log('Skipping fetch: no user or already fetching');
       return;
     }
 
     const { reset = false } = options;
     const currentOffset = reset ? 0 : pagination.offset;
     
+    fetchingRef.current = true;
     setLoading({
       isLoading: true,
       message: reset ? 'Loading search history...' : 'Loading more...'
@@ -93,6 +106,11 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         currentOffset
       );
 
+      if (!mountedRef.current) {
+        console.log('Component unmounted, skipping state update');
+        return;
+      }
+
       if (response.success) {
         setHistory(prev => reset ? response.history : [...prev, ...response.history]);
         setPagination(response.pagination);
@@ -100,6 +118,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         throw new Error(response.error || 'Failed to fetch search history');
       }
     } catch (err) {
+      if (!mountedRef.current) return;
+      
       const message = err instanceof Error ? err.message : 'Failed to load search history';
       setError({
         hasError: true,
@@ -107,9 +127,15 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         code: undefined
       });
     } finally {
-      setLoading({ isLoading: false });
+      if (mountedRef.current) {
+        setLoading({ isLoading: false });
+        fetchingRef.current = false;
+      }
     }
-  }, [user, pagination.limit, pagination.offset, clearError]);
+  }, [user?.id, pagination.limit]); // Only depend on user.id, not the whole user object
+
+  // Use stable fetch
+  const fetchHistory = useStableFetch(fetchHistoryImpl, [user?.id, pagination.limit]);
 
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
@@ -172,15 +198,37 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const isEmpty = history.length === 0 && !loading.isLoading;
   const totalCount = pagination.total_count || 0;
 
-  // Auto-fetch on mount and when user changes
+  // Initial fetch effect
   useEffect(() => {
-    if (autoFetch && user && !authLoading) {
-      fetchHistory({ reset: true });
-    } else if (!user) {
+    if (!autoFetch) return;
+    
+    // Skip if auth is still loading
+    if (authLoading) {
+      console.log('Auth still loading, skipping fetch');
+      return;
+    }
+
+    // Clear data if no user
+    if (!user) {
+      console.log('No user, clearing data');
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
+      hasInitializedRef.current = false;
+      return;
     }
-  }, [user, authLoading, autoFetch]);
+
+    // Only fetch if we haven't initialized for this user
+    if (!hasInitializedRef.current) {
+      console.log('Initial fetch for user:', user.id);
+      hasInitializedRef.current = true;
+      fetchHistory({ reset: true });
+    }
+  }, [user?.id, authLoading, autoFetch, fetchHistory]);
+
+  // Reset initialization flag when user changes
+  useEffect(() => {
+    hasInitializedRef.current = false;
+  }, [user?.id]);
 
   return {
     // Data

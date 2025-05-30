@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react'
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { 
   onAuthStateChange, 
@@ -36,193 +36,168 @@ export function AuthProvider({ children }: AuthProviderProps) {
     profile: null,
     session: null,
     loading: true
-  })
+  });
 
-  // Use ref to track if component is mounted instead of a variable
-  const mountedRef = useRef(true)
-  const subscriptionRef = useRef<any>(null)
-  const initializedRef = useRef(false)
+  const mountedRef = useRef(true);
+  const subscriptionRef = useRef<any>(null);
+  const initializingRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
 
-  // Debug logging for state changes
-  useEffect(() => {
-    console.log('🔵 Auth state changed:', {
-      hasUser: !!state.user,
-      userEmail: state.user?.email,
-      hasProfile: !!state.profile,
-      hasSession: !!state.session,
-      loading: state.loading,
-      initialized: initializedRef.current,
-      timestamp: new Date().toISOString()
+  // Stable setState that only updates if values actually changed
+  const setAuthState = useCallback((newState: AuthState) => {
+    setState(prevState => {
+      // Deep comparison to prevent unnecessary updates
+      const hasUserChanged = prevState.user?.id !== newState.user?.id;
+      const hasProfileChanged = JSON.stringify(prevState.profile) !== JSON.stringify(newState.profile);
+      const hasSessionChanged = prevState.session?.access_token !== newState.session?.access_token;
+      const hasLoadingChanged = prevState.loading !== newState.loading;
+
+      if (!hasUserChanged && !hasProfileChanged && !hasSessionChanged && !hasLoadingChanged) {
+        console.log('🔄 No actual state change, skipping update');
+        return prevState;
+      }
+
+      console.log('✅ Updating auth state', {
+        userChanged: hasUserChanged,
+        profileChanged: hasProfileChanged,
+        sessionChanged: hasSessionChanged,
+        loadingChanged: hasLoadingChanged
+      });
+
+      return newState;
     });
-  }, [state]);
+  }, []);
 
-  // Initialize auth state
+  // Initialize auth state only once
   useEffect(() => {
-    // Prevent re-initialization if already initialized
-    if (initializedRef.current) {
-      console.log('🔄 AuthProvider already initialized, skipping...');
+    if (initializingRef.current) {
+      console.log('🔄 Already initializing, skipping...');
       return;
     }
 
+    initializingRef.current = true;
     console.log('🚀 AuthProvider initializing...');
-    initializedRef.current = true;
     
     async function initializeAuth() {
       try {
-        console.log('📡 Getting current session...');
-        const session = await getCurrentSession()
-        console.log('📡 Current session:', session ? 'exists' : 'null');
+        const session = await getCurrentSession();
         
+        if (!mountedRef.current) return;
+
+        if (session?.user) {
+          let profile = await getUserProfile(session.user.id);
+          
+          if (!profile && session.user.email) {
+            const result = await createUserProfile(session.user);
+            if (result.success) {
+              profile = result.profile || null;
+            }
+          }
+
+          lastUserIdRef.current = session.user.id;
+          setAuthState({
+            user: session.user,
+            profile,
+            session,
+            loading: false
+          });
+        } else {
+          lastUserIdRef.current = null;
+          setAuthState({
+            user: null,
+            profile: null,
+            session: null,
+            loading: false
+          });
+        }
+      } catch (error) {
+        console.error('❌ Error initializing auth:', error);
         if (mountedRef.current) {
-          if (session?.user) {
-            console.log('👤 User found, getting profile...');
-            // Get user profile with retry logic
-            let profile = await getUserProfile(session.user.id)
+          setAuthState({
+            user: null,
+            profile: null,
+            session: null,
+            loading: false
+          });
+        }
+      } finally {
+        initializingRef.current = false;
+      }
+    }
+
+    initializeAuth();
+
+    // Simplified auth state change handler
+    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
+      if (!mountedRef.current) return;
+
+      console.log('🔄 Auth event:', event);
+
+      // Only handle actual auth changes, not token refreshes
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        if (session?.user) {
+          // Only proceed if user actually changed
+          if (lastUserIdRef.current === session.user.id) {
+            console.log('Same user, ignoring event');
+            return;
+          }
+
+          lastUserIdRef.current = session.user.id;
+          
+          // Set loading only for actual user changes
+          setState(prev => ({ ...prev, loading: true }));
+
+          try {
+            let profile = await getUserProfile(session.user.id);
             
-            // If no profile exists, try to create one
             if (!profile && session.user.email) {
-              console.log('No profile found, creating one...')
-              const result = await createUserProfile(session.user)
+              const result = await createUserProfile(session.user);
               if (result.success) {
-                profile = result.profile || null
-                console.log('Profile created successfully')
-              } else {
-                console.error('Failed to create profile:', result.error)
+                profile = result.profile || null;
               }
             }
 
-            console.log('✅ Setting authenticated state');
-            setState({
-              user: session.user,
-              profile,
-              session,
-              loading: false
-            })
-          } else {
-            console.log('❌ No user session, setting unauthenticated state');
-            setState({
-              user: null,
-              profile: null,
-              session: null,
-              loading: false
-            })
-          }
-        } else {
-          console.log('⚠️ Component unmounted during auth initialization');
-        }
-      } catch (error) {
-        console.error('❌ Error initializing auth:', error)
-        if (mountedRef.current) {
-          setState({
-            user: null,
-            profile: null,
-            session: null,
-            loading: false
-          })
-        }
-      }
-    }
-
-    initializeAuth()
-
-    // Listen for auth changes
-    console.log('👂 Setting up auth state change listener...');
-    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      if (!mountedRef.current) {
-        console.log('⚠️ Auth state change ignored - component unmounted');
-        return;
-      }
-
-      console.log('🔄 Auth state change event:', event, session?.user?.email || 'no user');
-
-      if (session?.user) {
-        console.log('👤 User session detected, updating state...');
-        // Only set loading if we don't already have this user and we're not already loading
-        setState(prev => {
-          if (prev.user?.id !== session.user.id && !prev.loading) {
-            console.log('🔄 Setting loading state for new user');
-            return { ...prev, loading: true };
-          }
-          console.log('🔄 Keeping current state, no loading needed');
-          return prev;
-        });
-        
-        try {
-          // Get user profile with retry for new signups
-          let profile = await getUserProfile(session.user.id)
-          
-          // Create profile if it doesn't exist
-          if (!profile && session.user.email) {
-            console.log(`Creating profile for ${event} event...`)
-            const result = await createUserProfile(session.user)
-            if (result.success) {
-              profile = result.profile || null
-              console.log('Profile created in auth state change')
-            } else {
-              console.error('Failed to create profile in auth state change:', result.error)
+            if (mountedRef.current) {
+              setAuthState({
+                user: session.user,
+                profile,
+                session,
+                loading: false
+              });
+            }
+          } catch (error) {
+            console.error('Error in auth state change:', error);
+            if (mountedRef.current) {
+              setAuthState({
+                user: session.user,
+                profile: null,
+                session,
+                loading: false
+              });
             }
           }
-
-          // For sign-in events, if still no profile, try one more time after a brief delay
-          if (!profile && event === 'SIGNED_IN' && session.user.email) {
-            console.log('Retrying profile fetch after sign-in...')
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            profile = await getUserProfile(session.user.id)
-          }
-
-          if (mountedRef.current) {
-            console.log('✅ Setting authenticated state from auth change');
-            setState({
-              user: session.user,
-              profile,
-              session,
-              loading: false
-            })
-          } else {
-            console.log('⚠️ Component unmounted during auth state change handling');
-          }
-        } catch (error) {
-          console.error('Error handling auth state change:', error)
-          if (mountedRef.current) {
-            setState({
-              user: session.user,
-              profile: null,
-              session,
-              loading: false
-            })
-          }
-        }
-      } else {
-        console.log('❌ No user session, clearing auth state');
-        if (mountedRef.current) {
-          setState({
+        } else {
+          lastUserIdRef.current = null;
+          setAuthState({
             user: null,
             profile: null,
             session: null,
             loading: false
-          })
+          });
         }
       }
-    })
+    });
 
-    subscriptionRef.current = subscription
+    subscriptionRef.current = subscription;
 
     return () => {
-      console.log('🧹 AuthProvider cleanup - unmounting');
-      mountedRef.current = false
+      console.log('🧹 AuthProvider cleanup');
+      mountedRef.current = false;
       if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe()
+        subscriptionRef.current.unsubscribe();
       }
-    }
-  }, []) // No dependencies to prevent re-running
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      console.log('🧹 AuthProvider final cleanup');
-      mountedRef.current = false
-    }
-  }, [])
+    };
+  }, []); // Empty deps, runs only once
 
   const signUp = async (data: SignUpData) => {
     setState(prev => ({ ...prev, loading: true }))
