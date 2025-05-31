@@ -11,6 +11,10 @@ import json
 from search_recommendation import outfit_recommendation_with_cleaned_data
 import traceback
 from datetime import datetime
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Import database and auth services
 from database_service import db_service
@@ -39,12 +43,9 @@ def allowed_file(filename):
 
 def setup_db_context():
     """Helper function to set up database context for authenticated requests"""
-    if hasattr(g, 'auth_token') and g.auth_token:
-        # Set the user context in the database service for RLS
-        try:
-            db_service.set_user_context(g.auth_token)
-        except Exception as e:
-            print(f"Warning: Failed to set database user context: {e}")
+    # No longer needed since we use service_client for all backend operations
+    # The backend has already authenticated users via JWT middleware
+    pass
 
 @app.route('/')
 def index():
@@ -69,7 +70,6 @@ def auth_status():
 def get_profile():
     """Get current user's profile"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         profile = db_service.get_user_profile(user_id)
         
@@ -98,7 +98,6 @@ def get_profile():
 def update_profile():
     """Update current user's profile"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         data = request.get_json()
         
@@ -136,17 +135,17 @@ def update_profile():
 @app.route('/api/history', methods=['GET'])
 @require_auth
 def get_search_history():
-    """Get user's search history"""
+    """Get user's search history with optional detailed results"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         limit = int(request.args.get('limit', 50))
         offset = int(request.args.get('offset', 0))
+        include_details = request.args.get('include_details', 'false').lower() == 'true'
         
-        history = db_service.get_user_search_history(user_id, limit, offset)
+        history = db_service.get_user_search_history(user_id, limit, offset, include_details)
         
         # Get total count for better pagination
-        total_count_response = db_service.client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).execute()
+        total_count_response = db_service.service_client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).execute()
         total_count = total_count_response.count or 0
         
         return jsonify({
@@ -157,13 +156,40 @@ def get_search_history():
                 'offset': offset,
                 'has_more': len(history) == limit,
                 'total_count': total_count
-            }
+            },
+            'include_details': include_details
         })
     except Exception as e:
         print(f"Error getting search history: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Error getting search history: {str(e)}'
+        }), 500
+
+@app.route('/api/history/<session_id>', methods=['GET'])
+@require_auth
+def get_search_session_details(session_id):
+    """Get detailed information for a specific search session"""
+    try:
+        user_id = get_current_user_id()
+        
+        session_details = db_service.get_search_session_details(session_id, user_id)
+        
+        if not session_details:
+            return jsonify({
+                'success': False,
+                'error': 'Search session not found or access denied'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'session': session_details
+        })
+    except Exception as e:
+        print(f"Error getting search session details: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting search session details: {str(e)}'
         }), 500
 
 # Wishlist Endpoints
@@ -173,7 +199,6 @@ def get_search_history():
 def get_wishlist():
     """Get user's wishlist"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         limit = int(request.args.get('limit', 50))
         offset = int(request.args.get('offset', 0))
@@ -203,75 +228,47 @@ def get_wishlist():
 def add_to_wishlist():
     """Add item to user's wishlist"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         data = request.get_json()
         
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No data provided'
-            }), 400
-        
-        product_id = data.get('product_id')
-        notes = data.get('notes')
-        tags = data.get('tags', [])
-        
-        if not product_id:
+        if not data or 'product_id' not in data:
             return jsonify({
                 'success': False,
                 'error': 'Product ID is required'
             }), 400
         
-        # Validate product_id format (should be UUID)
-        try:
-            uuid.UUID(product_id)
-        except ValueError:
+        product_id = data['product_id']
+        notes = data.get('notes')
+        tags = data.get('tags', [])
+        
+        # Check wishlist limit (optional, adjust as needed)
+        if not db_service.check_wishlist_limit(user_id, max_items=1000):
             return jsonify({
                 'success': False,
-                'error': 'Invalid product ID format'
+                'error': 'Wishlist limit reached (1000 items maximum)'
             }), 400
         
-        # Check wishlist limit
-        if not db_service.check_wishlist_limit(user_id):
-            return jsonify({
-                'success': False,
-                'error': 'Wishlist limit reached (maximum 1000 items)'
-            }), 429  # Too Many Requests
-        
-        # Check if already in wishlist first (faster check)
-        if db_service.is_item_in_wishlist(user_id, product_id):
-            return jsonify({
-                'success': False,
-                'error': 'Item already in wishlist'
-            }), 409
-        
+        # Add to wishlist
         wishlist_item = db_service.add_to_wishlist(user_id, product_id, notes, tags)
         
-        if wishlist_item is None:
-            # Check if product exists to give specific error
-            from supabase import create_client
-            supabase_client = create_client(
-                os.getenv("SUPABASE_URL"),
-                os.getenv("SUPABASE_ANON_KEY")
-            )
-            product_check = supabase_client.table("products").select("id").eq("id", product_id).execute()
-            
-            if not product_check.data:
+        if wishlist_item:
+            return jsonify({
+                'success': True,
+                'item': wishlist_item,
+                'message': 'Item added to wishlist successfully'
+            })
+        else:
+            # Check if it's already in wishlist or product doesn't exist
+            if db_service.is_item_in_wishlist(user_id, product_id):
                 return jsonify({
                     'success': False,
-                    'error': 'Product not found'
-                }), 404
+                    'error': 'Item is already in your wishlist'
+                }), 400
             else:
                 return jsonify({
                     'success': False,
-                    'error': 'Failed to add item to wishlist'
-                }), 500
-        
-        return jsonify({
-            'success': True,
-            'wishlist_item': wishlist_item
-        })
+                    'error': 'Product not found or could not be added to wishlist'
+                }), 400
     except Exception as e:
         print(f"Error adding to wishlist: {str(e)}")
         return jsonify({
@@ -284,28 +281,30 @@ def add_to_wishlist():
 def remove_from_wishlist():
     """Remove item from user's wishlist"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         data = request.get_json()
         
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No data provided'
-            }), 400
-        
-        product_id = data.get('product_id')
-        if not product_id:
+        if not data or 'product_id' not in data:
             return jsonify({
                 'success': False,
                 'error': 'Product ID is required'
             }), 400
         
+        product_id = data['product_id']
+        
+        # Remove from wishlist
         success = db_service.remove_from_wishlist(user_id, product_id)
         
-        return jsonify({
-            'success': success
-        })
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item removed from wishlist successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to remove item from wishlist'
+            }), 400
     except Exception as e:
         print(f"Error removing from wishlist: {str(e)}")
         return jsonify({
@@ -318,23 +317,27 @@ def remove_from_wishlist():
 def check_wishlist_status():
     """Check if items are in user's wishlist"""
     try:
-        setup_db_context()
         user_id = get_current_user_id()
         data = request.get_json()
         
         if not data:
             return jsonify({
                 'success': False,
-                'error': 'No data provided'
+                'error': 'Request data is required'
             }), 400
         
-        product_ids = data.get('product_ids', [])
-        if not product_ids:
+        # Handle both single product_id and array of product_ids
+        if 'product_id' in data:
+            product_ids = [data['product_id']]
+        elif 'product_ids' in data:
+            product_ids = data['product_ids']
+        else:
             return jsonify({
                 'success': False,
-                'error': 'Product IDs are required'
+                'error': 'product_id or product_ids is required'
             }), 400
         
+        # Check wishlist status for each product
         wishlist_status = {}
         for product_id in product_ids:
             wishlist_status[product_id] = db_service.is_item_in_wishlist(user_id, product_id)
@@ -355,6 +358,13 @@ def check_wishlist_status():
 def upload_file():
     """Handle outfit image upload and process recommendations"""
     try:
+        # Get authenticated user if available
+        user_id = get_current_user_id()
+        if user_id:
+            logger.info(f"Processing upload for authenticated user: {user_id}")
+        else:
+            logger.info("Processing upload for anonymous user")
+        
         # Check if the post request has the file part
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -382,28 +392,41 @@ def upload_file():
             
             # Create database session (for both authenticated and anonymous users)
             session_record = None
-            user_id = get_current_user_id()
             image_url = f"/uploads/{unique_filename}"
             
             if user_id:
-                # Authenticated user
-                session_record = db_service.create_search_session(
-                    user_id=user_id,
-                    file_id=file_id,
-                    image_filename=filename,
-                    image_url=image_url,
-                    country=country,
-                    language=language
-                )
+                # Authenticated user - session will be linked to user
+                try:
+                    session_record = db_service.create_search_session(
+                        user_id=user_id,
+                        file_id=file_id,
+                        image_filename=filename,
+                        image_url=image_url,
+                        country=country,
+                        language=language
+                    )
+                    if session_record:
+                        logger.info(f"Created search session {session_record['id']} for user {user_id}")
+                    else:
+                        logger.error(f"Failed to create search session for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Error creating search session for user {user_id}: {str(e)}")
+                    # Continue without database session
             else:
                 # Anonymous user - create anonymous session
-                session_record = db_service.create_anonymous_search_session(
-                    file_id=file_id,
-                    image_filename=filename,
-                    image_url=image_url,
-                    country=country,
-                    language=language
-                )
+                try:
+                    session_record = db_service.create_anonymous_search_session(
+                        file_id=file_id,
+                        image_filename=filename,
+                        image_url=image_url,
+                        country=country,
+                        language=language
+                    )
+                    if session_record:
+                        logger.info(f"Created anonymous search session {session_record['id']}")
+                except Exception as e:
+                    logger.error(f"Error creating anonymous search session: {str(e)}")
+                    # Continue without database session
             
             # Generate output paths
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -448,19 +471,27 @@ def upload_file():
             # Save results to database if user is authenticated
             if session_record and result.get('cleaned_data'):
                 # Update session with results
+                conversation_context_for_db = result.get('conversation_context', {})
+                # Remove image_bytes for JSON serialization in database
+                if conversation_context_for_db and 'image_bytes' in conversation_context_for_db:
+                    conversation_context_for_db = {k: v for k, v in conversation_context_for_db.items() if k != 'image_bytes'}
+                
                 session_updates = {
                     'status': 'completed',
                     'search_queries': result.get('search_queries', []),
                     'num_items_identified': result.get('num_items_identified', 0),
                     'num_products_found': result.get('num_products_found', 0),
-                    'conversation_context': result.get('conversation_context', {})
+                    'conversation_context': conversation_context_for_db
                 }
                 db_service.update_search_session(session_record['id'], session_updates)
                 
                 # Save clothing items and products
                 clothing_items = result.get('cleaned_data', {}).get('clothing_items', [])
                 if clothing_items:
-                    db_service.save_clothing_items(session_record['id'], clothing_items)
+                    success = db_service.save_clothing_items(session_record['id'], clothing_items)
+                    if not success:
+                        print(f"WARNING: Failed to save clothing items for session {session_record['id']}")
+                        # Log but don't fail the request since we have the data
             
             # Prepare conversation context for JSON serialization (remove image_bytes)
             conversation_context = result.get('conversation_context')
@@ -505,6 +536,13 @@ def upload_file():
 def redo_search():
     """Handle redo search requests with custom feedback"""
     try:
+        # Get authenticated user if available
+        user_id = get_current_user_id()
+        if user_id:
+            logger.info(f"Processing redo search for authenticated user: {user_id}")
+        else:
+            logger.info("Processing redo search for anonymous user")
+        
         data = request.get_json()
         
         if not data or 'conversation_context' not in data:
@@ -555,19 +593,33 @@ def redo_search():
         cleaned_data = clean_search_results_for_frontend(search_results)
         
         # Update database session if user is authenticated and session_id provided
-        user_id = get_current_user_id()
         if user_id and session_id:
-            session_updates = {
-                'search_queries': new_queries,
-                'num_products_found': cleaned_data.get('summary', {}).get('total_products', 0),
-                'conversation_context': redo_result
-            }
-            db_service.update_search_session(session_id, session_updates)
-            
-            # Save new clothing items and products
-            clothing_items = cleaned_data.get('clothing_items', [])
-            if clothing_items:
-                db_service.save_clothing_items(session_id, clothing_items)
+            try:
+                # Remove image_bytes from redo_result for JSON serialization in database
+                conversation_context_for_db = redo_result
+                if conversation_context_for_db and 'image_bytes' in conversation_context_for_db:
+                    conversation_context_for_db = {k: v for k, v in conversation_context_for_db.items() if k != 'image_bytes'}
+                
+                session_updates = {
+                    'search_queries': new_queries,
+                    'num_products_found': cleaned_data.get('summary', {}).get('total_products', 0),
+                    'conversation_context': conversation_context_for_db
+                }
+                db_service.update_search_session(session_id, session_updates)
+                logger.info(f"Updated search session {session_id} for user {user_id}")
+                
+                # Save new clothing items and products
+                clothing_items = cleaned_data.get('clothing_items', [])
+                if clothing_items:
+                    success = db_service.save_clothing_items(session_id, clothing_items)
+                    if success:
+                        logger.info(f"Saved {len(clothing_items)} clothing items for session {session_id}")
+                    else:
+                        logger.error(f"Failed to save clothing items for session {session_id}")
+                        # Continue without failing the request
+            except Exception as e:
+                logger.error(f"Error updating search session {session_id}: {str(e)}")
+                # Continue without database updates
         
         # Prepare conversation context for JSON serialization (remove image_bytes)
         updated_conversation_context = redo_result

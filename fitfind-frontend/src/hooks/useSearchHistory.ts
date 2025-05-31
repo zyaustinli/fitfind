@@ -5,15 +5,17 @@ import {
   SearchHistoryFilters, 
   PaginationInfo,
   LoadingState,
-  ErrorState 
+  ErrorState,
+  SearchSessionDetails
 } from '@/types';
-import { getSearchHistory } from '@/lib/api';
+import { getSearchHistory, getSearchSessionDetails } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStableFetch } from './useStableFetch';
 
 export interface UseSearchHistoryOptions {
   autoFetch?: boolean;
   initialLimit?: number;
+  includeDetails?: boolean;
 }
 
 export interface UseSearchHistoryReturn {
@@ -27,11 +29,12 @@ export interface UseSearchHistoryReturn {
   error: ErrorState;
   
   // Actions
-  fetchHistory: (options?: { reset?: boolean }) => Promise<void>;
+  fetchHistory: (options?: { reset?: boolean; includeDetails?: boolean }) => Promise<void>;
   loadMore: () => Promise<void>;
   refresh: () => Promise<void>;
   setFilters: (filters: Partial<SearchHistoryFilters>) => void;
   resetFilters: () => void;
+  getSessionDetails: (sessionId: string) => Promise<SearchSessionDetails | null>;
   
   // Computed
   filteredHistory: SearchHistoryItem[];
@@ -45,7 +48,7 @@ const defaultFilters: SearchHistoryFilters = {
 };
 
 export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSearchHistoryReturn {
-  const { autoFetch = true, initialLimit = 50 } = options;
+  const { autoFetch = true, initialLimit = 50, includeDetails = false } = options;
   const { user, loading: authLoading } = useAuth();
   
   // Core state
@@ -84,13 +87,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     setError({ hasError: false });
   }, []);
 
-  const fetchHistoryImpl = useCallback(async (options: { reset?: boolean } = {}) => {
+  const fetchHistoryImpl = useCallback(async (options: { reset?: boolean; includeDetails?: boolean } = {}) => {
     if (!user || fetchingRef.current) {
       console.log('Skipping fetch: no user or already fetching');
       return;
     }
 
-    const { reset = false } = options;
+    const { reset = false, includeDetails = false } = options;
     const currentOffset = reset ? 0 : pagination.offset;
     
     fetchingRef.current = true;
@@ -103,7 +106,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     try {
       const response: SearchHistoryResponse = await getSearchHistory(
         pagination.limit,
-        currentOffset
+        currentOffset,
+        includeDetails
       );
 
       if (!mountedRef.current) {
@@ -145,13 +149,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       offset: prev.offset + prev.limit
     }));
     
-    await fetchHistory({ reset: false });
-  }, [loading.isLoading, pagination.has_more, fetchHistory]);
+    await fetchHistory({ reset: false, includeDetails });
+  }, [loading.isLoading, pagination.has_more, fetchHistory, includeDetails]);
 
   const refresh = useCallback(async () => {
     setPagination(prev => ({ ...prev, offset: 0 }));
-    await fetchHistory({ reset: true });
-  }, [fetchHistory]);
+    await fetchHistory({ reset: true, includeDetails });
+  }, [fetchHistory, includeDetails]);
 
   const setFilters = useCallback((newFilters: Partial<SearchHistoryFilters>) => {
     setFiltersState(prev => ({ ...prev, ...newFilters }));
@@ -221,14 +225,29 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     if (!hasInitializedRef.current) {
       console.log('Initial fetch for user:', user.id);
       hasInitializedRef.current = true;
-      fetchHistory({ reset: true });
+      fetchHistory({ reset: true, includeDetails });
     }
-  }, [user?.id, authLoading, autoFetch, fetchHistory]);
+  }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails]);
 
   // Reset initialization flag when user changes
   useEffect(() => {
     hasInitializedRef.current = false;
   }, [user?.id]);
+
+  const getSessionDetails = useCallback(async (sessionId: string) => {
+    if (!user) return null;
+
+    try {
+      const response = await getSearchSessionDetails(sessionId);
+      if (response.success && response.session) {
+        return response.session as SearchSessionDetails;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to fetch session details:', err);
+      return null;
+    }
+  }, [user]);
 
   return {
     // Data
@@ -246,6 +265,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     refresh,
     setFilters,
     resetFilters,
+    getSessionDetails,
     
     // Computed
     filteredHistory,

@@ -28,10 +28,11 @@ export default function HistoryPage() {
 
   const {
     history,
+    loading: historyLoading,
+    error: historyError,
+    pagination,
     filteredHistory,
     filters,
-    loading: historyLoading,
-    error,
     hasMore,
     isEmpty,
     totalCount,
@@ -39,10 +40,12 @@ export default function HistoryPage() {
     loadMore,
     refresh,
     setFilters,
-    resetFilters
+    resetFilters,
+    getSessionDetails
   } = useSearchHistory({
     autoFetch: true,
-    initialLimit: 20
+    initialLimit: 20,
+    includeDetails: true
   });
 
   // Debug logging for history page auth state
@@ -56,10 +59,38 @@ export default function HistoryPage() {
   }, [user, loading]);
 
   // Handle view actions
-  const handleViewItem = useCallback((item: SearchHistoryItem) => {
-    setSelectedItem(item);
-    setViewMode('detail');
-  }, []);
+  const handleViewItem = useCallback(async (item: SearchHistoryItem) => {
+    // Check if we already have detailed data
+    if (item.search_sessions.clothing_items) {
+      setSelectedItem(item);
+      setViewMode('detail');
+      return;
+    }
+
+    // Fetch detailed session data if not available
+    try {
+      const detailedSession = await getSessionDetails(item.search_session_id);
+      if (detailedSession) {
+        // Create enhanced item with detailed data
+        const enhancedItem = {
+          ...item,
+          search_sessions: detailedSession
+        };
+        setSelectedItem(enhancedItem);
+        setViewMode('detail');
+      } else {
+        console.error('Failed to fetch session details');
+        // Fallback to showing basic item
+        setSelectedItem(item);
+        setViewMode('detail');
+      }
+    } catch (error) {
+      console.error('Error fetching session details:', error);
+      // Fallback to showing basic item
+      setSelectedItem(item);
+      setViewMode('detail');
+    }
+  }, [getSessionDetails]);
 
   const handleBackToList = useCallback(() => {
     setSelectedItem(null);
@@ -78,7 +109,8 @@ export default function HistoryPage() {
         {
           country: item.search_sessions.country,
           language: item.search_sessions.language,
-          fileId: item.search_sessions.file_id
+          fileId: item.search_sessions.file_id,
+          sessionId: item.search_sessions.id
         }
       );
 
@@ -242,13 +274,13 @@ export default function HistoryPage() {
         )}
 
         {/* Error state */}
-        {error.hasError && (
+        {historyError.hasError && (
           <div className="p-6 rounded-lg border border-destructive/20 bg-destructive/5">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
               <div>
                 <h3 className="font-medium text-destructive mb-1">Failed to load search history</h3>
-                <p className="text-sm text-destructive mb-3">{error.message}</p>
+                <p className="text-sm text-destructive mb-3">{historyError.message}</p>
                 <Button variant="outline" size="sm" onClick={refresh}>
                   Try Again
                 </Button>
@@ -258,7 +290,7 @@ export default function HistoryPage() {
         )}
 
         {/* Empty state */}
-        {isEmpty && !historyLoading.isLoading && !error.hasError && (
+        {isEmpty && !historyLoading.isLoading && !historyError.hasError && (
           <div className="text-center py-16">
             <div className="w-24 h-24 bg-gradient-to-br from-blue-500/20 to-indigo-600/20 rounded-full flex items-center justify-center mb-6 mx-auto">
               <History className="w-12 h-12 text-blue-600" />

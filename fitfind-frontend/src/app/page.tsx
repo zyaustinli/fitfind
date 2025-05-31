@@ -70,7 +70,8 @@ export default function Home() {
         results: transformedResults,
         conversationContext: response.conversation_context,
         backendData: response.cleaned_data,
-        fileId: response.file_id
+        fileId: response.file_id,
+        sessionId: response.session_id
       });
 
     } catch (error) {
@@ -123,7 +124,8 @@ export default function Home() {
         {
           country: 'us',
           language: 'en',
-          fileId: searchSession.fileId
+          fileId: searchSession.fileId,
+          sessionId: searchSession.sessionId
         }
       );
 

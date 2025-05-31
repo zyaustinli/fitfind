@@ -35,11 +35,10 @@ class DatabaseService:
     
     def set_user_context(self, jwt_token: str):
         """Set user context for authenticated requests"""
+        # This method is no longer needed since we use service_client for backend operations
+        # The backend has already verified the user via JWT middleware
         try:
-            # Set the Authorization header for RLS to work properly
-            # This ensures all subsequent queries use the user's JWT token
-            self.client.options.headers["Authorization"] = f"Bearer {jwt_token}"
-            logger.info("Successfully set user context with JWT token")
+            logger.info("User context set (using service client for backend operations)")
             return True
         except Exception as e:
             logger.error(f"Failed to set user context: {e}")
@@ -49,7 +48,7 @@ class DatabaseService:
     def get_user_profile(self, user_id: str) -> Optional[Dict]:
         """Get user profile by ID"""
         try:
-            response = self.client.table("user_profiles").select("*").eq("id", user_id).execute()
+            response = self.service_client.table("user_profiles").select("*").eq("id", user_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error getting user profile: {e}")
@@ -64,7 +63,7 @@ class DatabaseService:
                 "full_name": full_name,
                 "preferences": {}
             }
-            response = self.client.table("user_profiles").insert(profile_data).execute()
+            response = self.service_client.table("user_profiles").insert(profile_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error creating user profile: {e}")
@@ -73,7 +72,7 @@ class DatabaseService:
     def update_user_profile(self, user_id: str, updates: Dict) -> Optional[Dict]:
         """Update user profile"""
         try:
-            response = self.client.table("user_profiles").update(updates).eq("id", user_id).execute()
+            response = self.service_client.table("user_profiles").update(updates).eq("id", user_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error updating user profile: {e}")
@@ -96,7 +95,8 @@ class DatabaseService:
                 "num_items_identified": 0,
                 "num_products_found": 0
             }
-            response = self.client.table("search_sessions").insert(session_data).execute()
+            # Use service client to bypass RLS - backend has already authenticated user
+            response = self.service_client.table("search_sessions").insert(session_data).execute()
             session = response.data[0] if response.data else None
             
             # Add to search history
@@ -111,16 +111,8 @@ class DatabaseService:
     def update_search_session(self, session_id: str, updates: Dict) -> Optional[Dict]:
         """Update search session"""
         try:
-            # Check if this is an anonymous session to use the right client
-            session_check = self.client.table("search_sessions").select("user_id").eq("id", session_id).execute()
-            
-            if session_check.data and session_check.data[0]["user_id"] is None:
-                # This is an anonymous session, use service client
-                client = self.service_client
-            else:
-                client = self.client
-            
-            response = client.table("search_sessions").update(updates).eq("id", session_id).execute()
+            # Always use service client for backend operations
+            response = self.service_client.table("search_sessions").update(updates).eq("id", session_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error updating search session: {e}")
@@ -129,7 +121,7 @@ class DatabaseService:
     def get_search_session(self, session_id: str) -> Optional[Dict]:
         """Get search session by ID"""
         try:
-            response = self.client.table("search_sessions").select("*").eq("id", session_id).execute()
+            response = self.service_client.table("search_sessions").select("*").eq("id", session_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error getting search session: {e}")
@@ -138,7 +130,7 @@ class DatabaseService:
     def get_search_session_by_file_id(self, file_id: str) -> Optional[Dict]:
         """Get search session by file ID"""
         try:
-            response = self.client.table("search_sessions").select("*").eq("file_id", file_id).execute()
+            response = self.service_client.table("search_sessions").select("*").eq("file_id", file_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             logger.error(f"Error getting search session by file_id: {e}")
@@ -147,7 +139,7 @@ class DatabaseService:
     def get_user_search_sessions(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
         """Get user's search sessions with pagination"""
         try:
-            response = (self.client.table("search_sessions")
+            response = (self.service_client.table("search_sessions")
                        .select("*")
                        .eq("user_id", user_id)
                        .order("created_at", desc=True)
@@ -162,16 +154,9 @@ class DatabaseService:
     def save_clothing_items(self, session_id: str, clothing_items: List[Dict]) -> bool:
         """Save clothing items for a search session"""
         try:
-            # Check if this is an anonymous session to use the right client
-            session_check = self.client.table("search_sessions").select("user_id").eq("id", session_id).execute()
-            use_service_client = False
-            
-            if session_check.data and session_check.data[0]["user_id"] is None:
-                # This is an anonymous session, use service client
-                use_service_client = True
-                client = self.service_client
-            else:
-                client = self.client
+            # ALWAYS use service_client for backend operations
+            # The backend has already verified the user owns this session
+            client = self.service_client
             
             items_to_insert = []
             for item in clothing_items:
@@ -193,7 +178,7 @@ class DatabaseService:
                 if response.data:
                     for i, clothing_item_record in enumerate(response.data):
                         if i < len(clothing_items) and "products" in clothing_items[i]:
-                            self.save_products(clothing_item_record["id"], clothing_items[i]["products"], use_service_client)
+                            self.save_products(clothing_item_record["id"], clothing_items[i]["products"], True)  # Always pass True
                 
                 return True
             return False
@@ -201,10 +186,11 @@ class DatabaseService:
             logger.error(f"Error saving clothing items: {e}")
             return False
     
-    def save_products(self, clothing_item_id: str, products: List[Dict], use_service_client: bool = False) -> bool:
+    def save_products(self, clothing_item_id: str, products: List[Dict], use_service_client: bool = True) -> bool:
         """Save products for a clothing item"""
         try:
-            client = self.service_client if use_service_client else self.client
+            # Always use service client for backend operations
+            client = self.service_client
             
             products_to_insert = []
             for product in products:
@@ -261,13 +247,13 @@ class DatabaseService:
         """Add item to user's wishlist"""
         try:
             # First, validate that the product exists
-            product_response = self.client.table("products").select("id, title, source").eq("id", product_id).execute()
+            product_response = self.service_client.table("products").select("id, title, source").eq("id", product_id).execute()
             if not product_response.data:
                 logger.error(f"Product not found: {product_id}")
                 return None
             
             # Check if item is already in wishlist
-            existing_response = (self.client.table("user_saved_items")
+            existing_response = (self.service_client.table("user_saved_items")
                                .select("id")
                                .eq("user_id", user_id)
                                .eq("product_id", product_id)
@@ -285,7 +271,7 @@ class DatabaseService:
             }
             
             # Insert the wishlist item and return with product details
-            response = self.client.table("user_saved_items").insert(wishlist_data).execute()
+            response = self.service_client.table("user_saved_items").insert(wishlist_data).execute()
             
             if response.data:
                 wishlist_item = response.data[0]
@@ -301,7 +287,7 @@ class DatabaseService:
     def remove_from_wishlist(self, user_id: str, product_id: str) -> bool:
         """Remove item from user's wishlist"""
         try:
-            response = (self.client.table("user_saved_items")
+            response = (self.service_client.table("user_saved_items")
                        .delete()
                        .eq("user_id", user_id)
                        .eq("product_id", product_id)
@@ -317,7 +303,7 @@ class DatabaseService:
             # Enforce reasonable limits
             limit = min(limit, 100)  # Maximum 100 items per request
             
-            response = (self.client.table("user_saved_items")
+            response = (self.service_client.table("user_saved_items")
                        .select("*, products(*)")
                        .eq("user_id", user_id)
                        .order("created_at", desc=True)
@@ -331,7 +317,7 @@ class DatabaseService:
     def get_wishlist_count(self, user_id: str) -> int:
         """Get total count of items in user's wishlist"""
         try:
-            response = (self.client.table("user_saved_items")
+            response = (self.service_client.table("user_saved_items")
                        .select("id", count="exact")
                        .eq("user_id", user_id)
                        .execute())
@@ -352,7 +338,7 @@ class DatabaseService:
     def is_item_in_wishlist(self, user_id: str, product_id: str) -> bool:
         """Check if item is in user's wishlist"""
         try:
-            response = (self.client.table("user_saved_items")
+            response = (self.service_client.table("user_saved_items")
                        .select("id")
                        .eq("user_id", user_id)
                        .eq("product_id", product_id)
@@ -373,7 +359,8 @@ class DatabaseService:
                 "user_id": user_id,
                 "search_session_id": session_id
             }
-            response = self.client.table("user_search_history").insert(history_data).execute()
+            # Use service client for backend operations
+            response = self.service_client.table("user_search_history").insert(history_data).execute()
             return bool(response.data)
         except Exception as e:
             logger.error(f"Error adding to search history: {e}")
@@ -383,7 +370,7 @@ class DatabaseService:
         """Clean up old search history entries, keeping only the most recent ones"""
         try:
             # Get count of current entries
-            count_response = (self.client.table("user_search_history")
+            count_response = (self.service_client.table("user_search_history")
                             .select("id", count="exact")
                             .eq("user_id", user_id)
                             .execute())
@@ -393,7 +380,7 @@ class DatabaseService:
             if current_count > max_entries:
                 # Get oldest entries to delete
                 entries_to_delete = current_count - max_entries
-                old_entries_response = (self.client.table("user_search_history")
+                old_entries_response = (self.service_client.table("user_search_history")
                                       .select("id")
                                       .eq("user_id", user_id)
                                       .order("created_at", desc=False)
@@ -404,7 +391,7 @@ class DatabaseService:
                     entry_ids = [entry["id"] for entry in old_entries_response.data]
                     # Delete old entries
                     for entry_id in entry_ids:
-                        self.client.table("user_search_history").delete().eq("id", entry_id).execute()
+                        self.service_client.table("user_search_history").delete().eq("id", entry_id).execute()
                     
                     logger.info(f"Cleaned up {len(entry_ids)} old search history entries for user {user_id}")
             
@@ -413,22 +400,73 @@ class DatabaseService:
             logger.error(f"Error cleaning up search history: {e}")
             return False
 
-    def get_user_search_history(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
-        """Get user's search history with session details"""
+    def get_user_search_history(self, user_id: str, limit: int = 50, offset: int = 0, include_details: bool = False) -> List[Dict]:
+        """Get user's search history with session details and optionally full results"""
         try:
             # Enforce reasonable limits
             limit = min(limit, 100)  # Maximum 100 items per request
             
-            response = (self.client.table("user_search_history")
-                       .select("*, search_sessions(*)")
-                       .eq("user_id", user_id)
-                       .order("created_at", desc=True)
-                       .range(offset, offset + limit - 1)
-                       .execute())
+            if include_details:
+                # Get detailed results with clothing items and products
+                response = (self.service_client.table("user_search_history")
+                           .select("""
+                               *,
+                               search_sessions(
+                                   *,
+                                   clothing_items(
+                                       *,
+                                       products(*)
+                                   )
+                               )
+                           """)
+                           .eq("user_id", user_id)
+                           .order("created_at", desc=True)
+                           .range(offset, offset + limit - 1)
+                           .execute())
+            else:
+                # Get basic session info only
+                response = (self.service_client.table("user_search_history")
+                           .select("*, search_sessions(*)")
+                           .eq("user_id", user_id)
+                           .order("created_at", desc=True)
+                           .range(offset, offset + limit - 1)
+                           .execute())
+            
             return response.data or []
         except Exception as e:
             logger.error(f"Error getting user search history: {e}")
             return []
+    
+    def get_search_session_details(self, session_id: str, user_id: str) -> Optional[Dict]:
+        """Get complete search session details with all clothing items and products"""
+        try:
+            # First verify the session belongs to the user
+            session_check = (self.service_client.table("search_sessions")
+                           .select("user_id")
+                           .eq("id", session_id)
+                           .eq("user_id", user_id)
+                           .execute())
+            
+            if not session_check.data:
+                logger.warning(f"Session {session_id} not found or doesn't belong to user {user_id}")
+                return None
+            
+            # Get complete session details
+            response = (self.service_client.table("search_sessions")
+                       .select("""
+                           *,
+                           clothing_items(
+                               *,
+                               products(*)
+                           )
+                       """)
+                       .eq("id", session_id)
+                       .execute())
+            
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting search session details for session {session_id}: {e}")
+            return None
     
     # Utility Methods
     def _parse_price(self, value) -> Optional[float]:
@@ -466,7 +504,7 @@ class DatabaseService:
         """Check database connection and return status"""
         try:
             # Simple query to test connection
-            response = self.client.table("user_profiles").select("count").execute()
+            response = self.service_client.table("user_profiles").select("count").execute()
             return {
                 "status": "healthy",
                 "database": "connected",

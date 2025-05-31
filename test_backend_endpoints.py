@@ -217,6 +217,44 @@ class BackendTester:
         
         return True
     
+    def test_search_history_detailed(self) -> bool:
+        """Test search history with detailed results"""
+        self.log("Testing detailed search history...")
+        
+        try:
+            # Test basic search history (without auth, should get 401)
+            response = self.session.get(f"{self.base_url}/api/history")
+            
+            if response.status_code == 401:
+                self.log("✅ Basic history correctly requires authentication")
+                
+                # Test detailed search history (without auth, should get 401)
+                response = self.session.get(f"{self.base_url}/api/history?include_details=true")
+                
+                if response.status_code == 401:
+                    self.log("✅ Detailed history correctly requires authentication")
+                    
+                    # Test session details endpoint (without auth, should get 401)
+                    response = self.session.get(f"{self.base_url}/api/history/test-session-id")
+                    
+                    if response.status_code == 401:
+                        self.log("✅ Session details correctly requires authentication")
+                        self.log("✅ All search history endpoints properly protected (authentication required)")
+                        return True
+                    else:
+                        self.log(f"❌ Session details endpoint should require auth but returned: {response.status_code}")
+                        return False
+                else:
+                    self.log(f"❌ Detailed history should require auth but returned: {response.status_code}")
+                    return False
+            else:
+                self.log(f"❌ Basic history should require auth but returned: {response.status_code}")
+                return False
+            
+        except Exception as e:
+            self.log(f"❌ Test failed with exception: {str(e)}")
+            return False
+    
     def run_all_tests(self) -> Dict[str, bool]:
         """Run all backend tests"""
         self.log("="*50)
@@ -242,6 +280,9 @@ class BackendTester:
         
         # Test duplicate handling
         results["duplicate_handling"] = self.test_duplicate_wishlist_handling()
+        
+        # Test detailed search history
+        results["detailed_search_history"] = self.test_search_history_detailed()
         
         # Summary
         self.log("="*50)
