@@ -8,23 +8,20 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { SearchHistoryCard } from "@/components/history/SearchHistoryCard";
 import { SearchHistoryFilters } from "@/components/history/SearchHistoryFilters";
-import { SearchSessionDetail } from "@/components/history/SearchSessionDetail";
 import type { SearchHistoryItem, ClothingItem } from "@/types";
 import { redoSearch } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 type ModalState = 
   | { isOpen: false }
   | { isOpen: true; mode: 'login' | 'signup' }
 
-type ViewMode = 'list' | 'detail';
-
 export default function HistoryPage() {
   const { user, loading } = useAuth();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [selectedItem, setSelectedItem] = useState<SearchHistoryItem | null>(null);
   const [savedProducts, setSavedProducts] = useState<Set<string>>(new Set());
   const [isRedoing, setIsRedoing] = useState(false);
+  const router = useRouter();
 
   const {
     history,
@@ -40,8 +37,7 @@ export default function HistoryPage() {
     loadMore,
     refresh,
     setFilters,
-    resetFilters,
-    getSessionDetails
+    resetFilters
   } = useSearchHistory({
     autoFetch: true,
     initialLimit: 20,
@@ -60,42 +56,9 @@ export default function HistoryPage() {
 
   // Handle view actions
   const handleViewItem = useCallback(async (item: SearchHistoryItem) => {
-    // Check if we already have detailed data
-    if (item.search_sessions.clothing_items) {
-      setSelectedItem(item);
-      setViewMode('detail');
-      return;
-    }
-
-    // Fetch detailed session data if not available
-    try {
-      const detailedSession = await getSessionDetails(item.search_session_id);
-      if (detailedSession) {
-        // Create enhanced item with detailed data
-        const enhancedItem = {
-          ...item,
-          search_sessions: detailedSession
-        };
-        setSelectedItem(enhancedItem);
-        setViewMode('detail');
-      } else {
-        console.error('Failed to fetch session details');
-        // Fallback to showing basic item
-        setSelectedItem(item);
-        setViewMode('detail');
-      }
-    } catch (error) {
-      console.error('Error fetching session details:', error);
-      // Fallback to showing basic item
-      setSelectedItem(item);
-      setViewMode('detail');
-    }
-  }, [getSessionDetails]);
-
-  const handleBackToList = useCallback(() => {
-    setSelectedItem(null);
-    setViewMode('list');
-  }, []);
+    // Navigate to dedicated session detail page
+    router.push(`/history/${item.search_session_id}`);
+  }, [router]);
 
   // Handle redo search
   const handleRedoSearch = useCallback(async (item: SearchHistoryItem) => {
@@ -220,24 +183,6 @@ export default function HistoryPage() {
           />
         )}
       </>
-    );
-  }
-
-  // Show detail view
-  if (viewMode === 'detail' && selectedItem) {
-    return (
-      <div className="h-full p-8 bg-gradient-to-br from-muted/30 to-primary/5">
-        <div className="max-w-7xl mx-auto">
-          <SearchSessionDetail
-            item={selectedItem}
-            onBack={handleBackToList}
-            onRedo={handleRedoSearch}
-            onSaveProduct={handleSaveProduct}
-            onRemoveProduct={handleRemoveProduct}
-            isProductSaved={isProductSaved}
-          />
-        </div>
-      </div>
     );
   }
 

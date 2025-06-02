@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Calendar, Clock, Search, ShoppingBag, RotateCcw, Download, Share2, ImageIcon, AlertCircle, CheckCircle, Loader, Star, ExternalLink } from "lucide-react";
-import { cn, formatDistanceToNow, formatPrice } from "@/lib/utils";
+import { useState, useMemo } from "react";
+import { ArrowLeft, RotateCcw, Download, Share2, ImageIcon, X, AlertTriangle, Calendar, Clock, CheckCircle, Loader } from "lucide-react";
+import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ProductCard } from "@/components/ui/product-card";
-import type { SearchHistoryItem, ClothingItem } from "@/types";
+import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
+import type { SearchHistoryItem, ClothingItem, BackendCleanedData } from "@/types";
 
 interface SearchSessionDetailProps {
   item: SearchHistoryItem;
@@ -22,37 +22,32 @@ const statusConfig = {
   uploading: {
     icon: Loader,
     label: "Uploading",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   analyzing: {
     icon: Loader,
     label: "Analyzing",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   searching: {
-    icon: Search,
+    icon: Loader,
     label: "Searching",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   completed: {
     icon: CheckCircle,
     label: "Completed",
-    variant: "default" as const,
-    color: "text-green-600",
-    bgColor: "bg-green-50"
+    iconColor: "text-green-500",
+    bgColor: "bg-green-500/10"
   },
   error: {
-    icon: AlertCircle,
+    icon: AlertTriangle,
     label: "Error",
-    variant: "destructive" as const,
-    color: "text-red-600",
-    bgColor: "bg-red-50"
+    iconColor: "text-red-500",
+    bgColor: "bg-red-500/10"
   }
 };
 
@@ -65,9 +60,10 @@ export function SearchSessionDetail({
   isProductSaved,
   className 
 }: SearchSessionDetailProps) {
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'results'>('overview');
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRedoing, setIsRedoing] = useState(false);
   
   const session = item.search_sessions;
   const statusInfo = statusConfig[session.status];
@@ -76,23 +72,69 @@ export function SearchSessionDetail({
   const createdAt = new Date(item.created_at);
   const timeAgo = formatDistanceToNow(createdAt);
 
-  // Transform clothing items to ClothingItem format for ProductCard
-  const allProducts: ClothingItem[] = session.clothing_items?.flatMap(clothingItem => 
-    clothingItem.products?.map(product => ({
-      query: clothingItem.query,
-      title: product.title,
-      link: product.product_url,
-      price: product.price?.toString() || null,
-      extracted_price: product.price || null,
-      source: product.source,
-      rating: product.rating || null,
-      reviews: product.review_count || null,
-      thumbnail: product.image_url,
-      product_id: product.external_id || product.id,
-      shipping: product.delivery_info,
-      tag: clothingItem.item_type,
-    })) || []
-  ) || [];
+  // Transform clothing items to ClothingItem format for RecommendationsDisplay
+  const transformedResults: ClothingItem[] = useMemo(() => {
+    return session.clothing_items?.flatMap(clothingItem => 
+      clothingItem.products?.map(product => ({
+        query: clothingItem.query,
+        title: product.title,
+        link: product.product_url,
+        price: product.price?.toString() || null,
+        extracted_price: product.price || null,
+        source: product.source,
+        rating: product.rating || null,
+        reviews: product.review_count || null,
+        thumbnail: product.image_url,
+        product_id: product.external_id || product.id,
+        shipping: product.delivery_info,
+        tag: clothingItem.item_type,
+      })) || []
+    ) || [];
+  }, [session.clothing_items]);
+
+  // Create backend data structure for RecommendationsDisplay
+  const backendData: BackendCleanedData | undefined = useMemo(() => {
+    if (!session.clothing_items || session.clothing_items.length === 0) return undefined;
+    
+    return {
+      clothing_items: session.clothing_items.map(clothingItem => ({
+        query: clothingItem.query,
+        item_type: clothingItem.item_type,
+        total_products: clothingItem.total_products,
+        price_range: clothingItem.price_range_min && clothingItem.price_range_max ? {
+          min: clothingItem.price_range_min,
+          max: clothingItem.price_range_max,
+          average: clothingItem.price_range_average || 0
+        } : null,
+        products: clothingItem.products?.map(product => ({
+          id: product.id,
+          title: product.title,
+          price: product.price?.toString() || null,
+          price_numeric: product.price || null,
+          old_price: product.old_price?.toString() || null,
+          old_price_numeric: product.old_price || null,
+          discount_percentage: product.discount_percentage?.toString() || null,
+          image_url: product.image_url,
+          product_url: product.product_url,
+          source: product.source,
+          source_icon: product.source_icon,
+          rating: product.rating,
+          review_count: product.review_count,
+          delivery_info: product.delivery_info,
+          tags: product.tags || []
+        })) || []
+      })),
+      summary: {
+        total_items: session.num_items_identified,
+        total_products: session.num_products_found,
+        has_errors: session.status === 'error',
+        error_items: session.status === 'error' && session.error_message ? [{
+          query: 'general',
+          error: session.error_message
+        }] : []
+      }
+    };
+  }, [session]);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -106,7 +148,6 @@ export function SearchSessionDetail({
         console.log('Error sharing:', error);
       }
     } else {
-      // Fallback to clipboard
       navigator.clipboard.writeText(window.location.href);
     }
   };
@@ -115,7 +156,7 @@ export function SearchSessionDetail({
     const data = {
       session: session,
       search_date: item.created_at,
-      products: allProducts
+      products: transformedResults
     };
     
     const dataStr = JSON.stringify(data, null, 2);
@@ -129,293 +170,294 @@ export function SearchSessionDetail({
     linkElement.click();
   };
 
+  const handleRedoSearch = async () => {
+    if (!onRedo || isRedoing) return;
+    setIsRedoing(true);
+    try {
+      await onRedo(item);
+    } finally {
+      setIsRedoing(false);
+    }
+  };
+
+  const handleImageClick = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+  };
+
+  const isProcessing = session.status === 'uploading' || session.status === 'analyzing' || session.status === 'searching';
+
   return (
-    <div className={cn("space-y-6", className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={onBack} className="gap-2">
-          <ArrowLeft className="w-4 h-4" />
-          Back to History
-        </Button>
-        
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleShare} className="gap-2">
-            <Share2 className="w-4 h-4" />
-            Share
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleDownload} className="gap-2">
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
-          {session.status === 'completed' && session.conversation_context && onRedo && (
-            <Button variant="default" size="sm" onClick={() => onRedo(item)} className="gap-2">
-              <RotateCcw className="w-4 h-4" />
-              Redo Search
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Session Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Info */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="rounded-lg border border-border bg-card p-6">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant={statusInfo.variant} className="text-sm">
-                    <StatusIcon className={cn("w-4 h-4 mr-2", session.status === 'analyzing' || session.status === 'uploading' ? "animate-spin" : "")} />
-                    {statusInfo.label}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    {timeAgo}
-                  </span>
-                </div>
+    <>
+      <div className={cn("h-full flex flex-col", className)}>
+        {/* Header */}
+        <div className="flex-shrink-0 p-6 border-b border-border bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button 
+                variant="ghost" 
+                onClick={onBack} 
+                className="gap-2 hover:bg-muted/50"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to History
+              </Button>
+              
+              <div className="flex items-center gap-3">
+                <Badge variant="secondary" className={cn("gap-2", statusInfo.bgColor)}>
+                  <StatusIcon className={cn(
+                    "w-3.5 h-3.5",
+                    statusInfo.iconColor,
+                    isProcessing && "animate-spin"
+                  )} />
+                  <span className={statusInfo.iconColor}>{statusInfo.label}</span>
+                </Badge>
                 
-                <h1 className="text-2xl font-bold text-foreground mb-2">
-                  {session.image_filename}
-                </h1>
-                
-                <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {createdAt.toLocaleDateString()} at {createdAt.toLocaleTimeString()}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <ShoppingBag className="w-4 h-4" />
-                    {session.num_items_identified} items identified
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Search className="w-4 h-4" />
-                    {session.num_products_found} products found
-                  </span>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  <span>{timeAgo}</span>
                 </div>
               </div>
             </div>
-
-            {/* Search Queries */}
-            {session.search_queries && session.search_queries.length > 0 && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-foreground mb-2">Search Queries</h3>
-                <div className="flex flex-wrap gap-2">
-                  {session.search_queries.map((query, index) => (
-                    <Badge key={index} variant="outline" className="text-sm">
-                      {query}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error Message */}
-            {session.status === 'error' && session.error_message && (
-              <div className="p-4 bg-destructive/5 border border-destructive/20 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-medium text-destructive mb-1">Error</div>
-                    <div className="text-sm text-destructive">
-                      {session.error_message}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Image Preview */}
-        <div className="space-y-4">
-          <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-            {session.image_url && !imageError ? (
-              <>
-                <img
-                  src={session.image_url}
-                  alt={session.image_filename}
-                  className={cn(
-                    "w-full h-full object-cover transition-opacity duration-300",
-                    imageLoaded ? "opacity-100" : "opacity-0"
+            
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleShare} className="gap-2">
+                <Share2 className="w-4 h-4" />
+                Share
+              </Button>
+              {session.status === 'completed' && session.conversation_context && (
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={handleRedoSearch}
+                  disabled={isRedoing}
+                  className="gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                >
+                  {isRedoing ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4" />
                   )}
-                  onLoad={() => setImageLoaded(true)}
-                  onError={() => setImageError(true)}
-                />
-                {!imageLoaded && (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-3 rounded-lg bg-muted/50">
-              <div className="text-2xl font-bold text-foreground">{session.num_items_identified}</div>
-              <div className="text-xs text-muted-foreground">Items</div>
+                  Redo Search
+                </Button>
+              )}
             </div>
-            <div className="text-center p-3 rounded-lg bg-muted/50">
-              <div className="text-2xl font-bold text-foreground">{session.num_products_found}</div>
-              <div className="text-xs text-muted-foreground">Products</div>
+          </div>
+          
+          <div className="mt-4">
+            <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                {createdAt.toLocaleDateString()} at {createdAt.toLocaleTimeString()}
+              </span>
+              <span>{session.num_items_identified} clothing items identified</span>
+              <span>{session.num_products_found} products found</span>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="border-b border-border">
-        <nav className="flex space-x-8">
-          <button
-            onClick={() => setSelectedTab('overview')}
-            className={cn(
-              "py-2 px-1 border-b-2 font-medium text-sm transition-colors",
-              selectedTab === 'overview'
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground"
-            )}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setSelectedTab('results')}
-            className={cn(
-              "py-2 px-1 border-b-2 font-medium text-sm transition-colors",
-              selectedTab === 'results'
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground"
-            )}
-          >
-            Results ({allProducts.length})
-          </button>
-        </nav>
-      </div>
+        {/* Main Content - Split Layout */}
+        <div className="flex-1 flex min-h-0">
+          {/* Left Side - Image Display */}
+          <div className="flex-1 p-8 border-r border-border bg-background overflow-y-auto">
+            <div className="max-w-lg mx-auto h-full flex flex-col">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-foreground mb-2">Your Outfit</h2>
+                <p className="text-muted-foreground">
+                  Original photo from your search session
+                </p>
+              </div>
 
-      {/* Tab Content */}
-      {selectedTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Clothing Items Summary */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Identified Items</h3>
-            {session.clothing_items && session.clothing_items.length > 0 ? (
-              <div className="space-y-3">
-                {session.clothing_items.map((clothingItem, index) => (
-                  <div key={index} className="p-4 rounded-lg border border-border bg-card">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-foreground">{clothingItem.item_type}</h4>
-                      <Badge variant="secondary" className="text-xs">
-                        {clothingItem.total_products} products
-                      </Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground mb-2">
-                      Search: "{clothingItem.query}"
-                    </div>
-                    {clothingItem.price_range_average && (
-                      <div className="text-sm">
-                        <span className="text-muted-foreground">Avg Price: </span>
-                        <span className="font-medium text-primary">
-                          ${clothingItem.price_range_average.toFixed(0)}
-                        </span>
-                        {clothingItem.price_range_min && clothingItem.price_range_max && (
-                          <span className="text-muted-foreground ml-2">
-                            (${clothingItem.price_range_min} - ${clothingItem.price_range_max})
-                          </span>
+              <div className="flex-1 flex flex-col justify-center">
+                <div className="relative">
+                  <div 
+                    className="relative rounded-xl overflow-hidden border-2 border-border bg-card transition-all duration-200 cursor-pointer hover:border-primary/50 hover:shadow-lg"
+                    onClick={handleImageClick}
+                  >
+                    {session.image_url && !imageError ? (
+                      <>
+                        <img
+                          src={session.image_url}
+                          alt={session.image_filename}
+                          className={cn(
+                            "w-full h-auto max-h-96 object-contain transition-all duration-300",
+                            imageLoaded ? "opacity-100" : "opacity-0"
+                          )}
+                          onLoad={() => setImageLoaded(true)}
+                          onError={() => setImageError(true)}
+                        />
+                        
+                        {!imageLoaded && (
+                          <div className="w-full h-96 flex items-center justify-center bg-muted/50">
+                            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          </div>
                         )}
+                        
+                        {/* Hover overlay */}
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                          <div className="opacity-0 hover:opacity-100 transition-opacity duration-200 text-white text-sm font-medium bg-black/60 backdrop-blur-sm px-4 py-2 rounded-lg">
+                            Click to expand
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full h-96 flex items-center justify-center bg-muted/50">
+                        <div className="text-center">
+                          <ImageIcon className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
+                          <p className="text-muted-foreground">Image not available</p>
+                        </div>
                       </div>
                     )}
                   </div>
-                ))}
+                  
+                  <div className="mt-4 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      {imageLoaded ? 'Click to view full size' : 'Loading image...'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Search Queries */}
+                {session.search_queries && session.search_queries.length > 0 && (
+                  <div className="mt-8 p-6 bg-muted/30 rounded-xl border">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">Search Queries Used</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {session.search_queries.map((query, index) => (
+                        <Badge key={index} variant="outline" className="text-xs">
+                          {query}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Display */}
+                {session.status === 'error' && session.error_message && (
+                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-red-900 mb-1">Search Error</div>
+                        <div className="text-sm text-red-700">{session.error_message}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="p-8 text-center text-muted-foreground">
-                No clothing items identified
-              </div>
-            )}
+            </div>
           </div>
 
-          {/* Search Analytics */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Search Analytics</h3>
-            <div className="space-y-3">
-              <div className="p-4 rounded-lg border border-border bg-card">
-                <div className="text-sm text-muted-foreground mb-1">File Info</div>
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Name: </span>
-                    <span className="font-medium">{session.image_filename}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Country: </span>
-                    <span className="font-medium">{session.country.toUpperCase()}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Language: </span>
-                    <span className="font-medium">{session.language.toUpperCase()}</span>
-                  </div>
-                </div>
+          {/* Right Side - Recommendations */}
+          <div className="flex-1 p-8 bg-gradient-to-br from-muted/30 to-primary/5 overflow-hidden flex flex-col">
+            <div className="flex flex-col h-full">
+              <div className="text-center mb-8 flex-shrink-0">
+                <h2 className="text-3xl font-bold text-foreground mb-2">Your Style Recommendations</h2>
+                <p className="text-muted-foreground">
+                  {transformedResults.length > 0
+                    ? `Found ${transformedResults.length} similar items across ${session.num_items_identified} clothing categories`
+                    : "No recommendations found for this search session"
+                  }
+                </p>
               </div>
 
-              <div className="p-4 rounded-lg border border-border bg-card">
-                <div className="text-sm text-muted-foreground mb-1">Session Details</div>
-                <div className="space-y-1">
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Session ID: </span>
-                    <span className="font-mono text-xs">{session.id}</span>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {session.status === 'completed' && transformedResults.length > 0 ? (
+                  <RecommendationsDisplay
+                    results={transformedResults}
+                    backendData={backendData}
+                    onSave={onSaveProduct}
+                    onRemove={onRemoveProduct}
+                    isItemSaved={isProductSaved}
+                  />
+                ) : session.status === 'error' ? (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+                        <AlertTriangle className="w-12 h-12 text-red-500" />
+                      </div>
+                      <h3 className="text-lg font-medium text-foreground mb-2">Search Failed</h3>
+                      <p className="text-muted-foreground mb-4">
+                        This search session encountered an error and no results are available.
+                      </p>
+                      {session.conversation_context && (
+                        <Button
+                          onClick={handleRedoSearch}
+                          disabled={isRedoing}
+                          variant="outline"
+                          className="gap-2"
+                        >
+                          {isRedoing ? (
+                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-4 h-4" />
+                          )}
+                          Try Again
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">File ID: </span>
-                    <span className="font-mono text-xs">{session.file_id}</span>
+                ) : isProcessing ? (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4 mx-auto" />
+                      <h3 className="text-lg font-medium text-foreground mb-2">
+                        {session.status === 'analyzing' ? 'Analyzing outfit...' : 
+                         session.status === 'searching' ? 'Finding recommendations...' : 
+                         'Processing...'}
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Please wait while we process your search
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Created: </span>
-                    <span className="font-medium">{createdAt.toLocaleString()}</span>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4 mx-auto">
+                        <ImageIcon className="w-12 h-12 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-lg font-medium text-foreground mb-2">No Results</h3>
+                      <p className="text-muted-foreground">
+                        This search session didn't produce any recommendations.
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Updated: </span>
-                    <span className="font-medium">{new Date(session.updated_at).toLocaleString()}</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {selectedTab === 'results' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-foreground">
-              Search Results ({allProducts.length} products)
-            </h3>
+      {/* Image Modal */}
+      {isModalOpen && session.image_url && !imageError && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
+          onClick={handleModalClose}
+        >
+          <div className="relative max-w-7xl max-h-full">
+            <button
+              onClick={handleModalClose}
+              className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+            >
+              <X className="h-8 w-8" />
+            </button>
+            <img
+              src={session.image_url}
+              alt={`${session.image_filename} - expanded view`}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-4 py-2 rounded-lg">
+              <p className="font-medium">{session.image_filename}</p>
+              <p className="text-sm opacity-80">{createdAt.toLocaleString()}</p>
+            </div>
           </div>
-          
-          {allProducts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {allProducts.map((product, index) => (
-                <ProductCard
-                  key={`${product.product_id}-${index}`}
-                  item={product}
-                  onSave={onSaveProduct}
-                  onRemove={onRemoveProduct}
-                  isSaved={isProductSaved?.(product) || false}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="p-12 text-center">
-              <ShoppingBag className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No Products Found</h3>
-              <p className="text-muted-foreground">
-                This search session didn't find any matching products.
-              </p>
-            </div>
-          )}
         </div>
       )}
-    </div>
+    </>
   );
 } 

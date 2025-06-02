@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Clock, Search, Eye, RotateCcw, Trash2, ImageIcon, ShoppingBag, Star, AlertCircle, CheckCircle, Loader } from "lucide-react";
+import { Eye, ImageIcon, AlertTriangle, Clock, CheckCircle, Loader } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import type { SearchHistoryItem } from "@/types";
 
 interface SearchHistoryCardProps {
@@ -19,37 +18,32 @@ const statusConfig = {
   uploading: {
     icon: Loader,
     label: "Uploading",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   analyzing: {
     icon: Loader,
     label: "Analyzing",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   searching: {
-    icon: Search,
+    icon: Loader,
     label: "Searching",
-    variant: "secondary" as const,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50"
+    iconColor: "text-blue-500",
+    bgColor: "bg-blue-500/10"
   },
   completed: {
     icon: CheckCircle,
-    label: "Completed",
-    variant: "default" as const,
-    color: "text-green-600",
-    bgColor: "bg-green-50"
+    label: "Ready",
+    iconColor: "text-green-500",
+    bgColor: "bg-green-500/10"
   },
   error: {
-    icon: AlertCircle,
+    icon: AlertTriangle,
     label: "Error",
-    variant: "destructive" as const,
-    color: "text-red-600",
-    bgColor: "bg-red-50"
+    iconColor: "text-red-500",
+    bgColor: "bg-red-500/10"
   }
 };
 
@@ -63,13 +57,6 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
   
   const createdAt = new Date(item.created_at);
   const timeAgo = formatDistanceToNow(createdAt);
-  
-  // Calculate average price from products
-  const avgPrice = session.clothing_items && session.clothing_items.length > 0 
-    ? session.clothing_items.reduce((acc, clothingItem) => {
-        return acc + (clothingItem.price_range_average || 0);
-      }, 0) / session.clothing_items.length
-    : 0;
 
   const handleView = () => {
     onView?.(item);
@@ -85,189 +72,140 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
     onDelete?.(item);
   };
 
+  const isProcessing = session.status === 'uploading' || session.status === 'analyzing' || session.status === 'searching';
+
   return (
     <div 
       className={cn(
-        "group relative rounded-lg border border-border bg-card overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-primary/5 cursor-pointer",
+        "group relative aspect-[4/5] rounded-xl overflow-hidden bg-muted/30 cursor-pointer",
+        "border border-border/50 hover:border-primary/20",
+        "shadow-sm hover:shadow-xl hover:shadow-primary/10",
+        "transition-all duration-300 ease-out",
+        "hover:scale-[1.02] hover:-translate-y-1",
         className
       )}
       onClick={handleView}
     >
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant={statusInfo.variant} className="text-xs">
-                <StatusIcon className={cn("w-3 h-3 mr-1", session.status === 'analyzing' || session.status === 'uploading' ? "animate-spin" : "")} />
-                {statusInfo.label}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                {timeAgo}
-              </span>
-            </div>
+      {/* Main Image */}
+      <div className="absolute inset-0">
+        {session.image_url && !imageError ? (
+          <>
+            <img
+              src={session.image_url}
+              alt={session.image_filename}
+              className={cn(
+                "w-full h-full object-cover transition-all duration-500",
+                imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105",
+                "group-hover:scale-110"
+              )}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageError(true)}
+            />
             
-            <h3 className="font-medium text-foreground truncate mb-1">
-              {session.image_filename}
-            </h3>
-            
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <ShoppingBag className="w-4 h-4" />
-                {session.num_items_identified} items
-              </span>
-              <span className="flex items-center gap-1">
-                <Search className="w-4 h-4" />
-                {session.num_products_found} products
-              </span>
-            </div>
-          </div>
-          
-          {/* Image thumbnail */}
-          <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-            {session.image_url && !imageError ? (
-              <>
-                <img
-                  src={session.image_url}
-                  alt={session.image_filename}
-                  className={cn(
-                    "w-full h-full object-cover transition-opacity duration-300",
-                    imageLoaded ? "opacity-100" : "opacity-0"
-                  )}
-                  onLoad={() => setImageLoaded(true)}
-                  onError={() => setImageError(true)}
-                />
-                {!imageLoaded && (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-6 h-6 text-muted-foreground" />
-              </div>
+            {/* Loading shimmer effect */}
+            {!imageLoaded && (
+              <div className="absolute inset-0 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 animate-pulse" />
             )}
+          </>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-muted/50">
+            <ImageIcon className="w-12 h-12 text-muted-foreground/50" />
           </div>
-        </div>
-      </div>
-
-      {/* Search Queries Preview */}
-      {session.search_queries && session.search_queries.length > 0 && (
-        <div className="p-4 border-b border-border bg-muted/30">
-          <div className="text-xs text-muted-foreground mb-2 font-medium">
-            Search Queries
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {session.search_queries.slice(0, 3).map((query, index) => (
-              <Badge key={index} variant="outline" className="text-xs px-2 py-1">
-                {query.length > 25 ? `${query.substring(0, 25)}...` : query}
-              </Badge>
-            ))}
-            {session.search_queries.length > 3 && (
-              <Badge variant="outline" className="text-xs px-2 py-1">
-                +{session.search_queries.length - 3} more
-              </Badge>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Results Preview */}
-      {session.clothing_items && session.clothing_items.length > 0 && (
-        <div className="p-4">
-          <div className="text-xs text-muted-foreground mb-3 font-medium">
-            Found Items
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {session.clothing_items.slice(0, 2).map((clothingItem, index) => (
-              <div key={index} className="text-xs space-y-1">
-                <div className="font-medium text-foreground truncate">
-                  {clothingItem.item_type}
-                </div>
-                <div className="text-muted-foreground">
-                  {clothingItem.total_products} products
-                </div>
-                {clothingItem.price_range_average && (
-                  <div className="text-primary font-medium">
-                    ~${clothingItem.price_range_average.toFixed(0)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          
-          {session.clothing_items.length > 2 && (
-            <div className="mt-3 text-xs text-center text-muted-foreground">
-              +{session.clothing_items.length - 2} more items
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Error Message */}
-      {session.status === 'error' && session.error_message && (
-        <div className="p-4 bg-destructive/5 border-t border-destructive/20">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-destructive">
-              {session.error_message}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleView}
-          className="bg-white/90 text-gray-900 hover:bg-white"
-        >
-          <Eye className="h-4 w-4" />
-          View
-        </Button>
-        
-        {session.status === 'completed' && session.conversation_context && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleRedo}
-            className="bg-white/90 text-gray-900 hover:bg-white"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Redo
-          </Button>
         )}
-        
+      </div>
+
+      {/* Status Indicator */}
+      {(isProcessing || session.status === 'error') && (
+        <div className="absolute top-3 left-3 z-10">
+          <div className={cn(
+            "flex items-center gap-2 px-2.5 py-1.5 rounded-full backdrop-blur-md border border-white/20",
+            statusInfo.bgColor
+          )}>
+            <StatusIcon className={cn(
+              "w-3.5 h-3.5",
+              statusInfo.iconColor,
+              isProcessing && "animate-spin"
+            )} />
+            <span className={cn("text-xs font-medium", statusInfo.iconColor)}>
+              {statusInfo.label}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Time indicator - subtle, bottom left */}
+      <div className="absolute bottom-3 left-3 z-10">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
+          <Clock className="w-3 h-3 text-white/80" />
+          <span className="text-xs text-white/90 font-medium">
+            {timeAgo}
+          </span>
+        </div>
+      </div>
+
+      {/* Items count - subtle, bottom right */}
+      {session.status === 'completed' && session.num_items_identified > 0 && (
+        <div className="absolute bottom-3 right-3 z-10">
+          <div className="px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
+            <span className="text-xs text-white/90 font-medium">
+              {session.num_items_identified} {session.num_items_identified === 1 ? 'item' : 'items'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Hover Overlay */}
+      <div className={cn(
+        "absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent",
+        "opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+        "flex items-center justify-center"
+      )}>
         <Button
           variant="secondary"
-          size="sm"
-          onClick={handleDelete}
-          className="bg-white/90 text-red-600 hover:bg-white hover:text-red-700"
+          size="lg"
+          className={cn(
+            "bg-white/95 text-gray-900 hover:bg-white border-0 shadow-xl",
+            "transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300",
+            "font-semibold tracking-wide"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleView();
+          }}
         >
-          <Trash2 className="h-4 w-4" />
-          Delete
+          <Eye className="w-5 h-5 mr-2" />
+          View Details
         </Button>
       </div>
 
-      {/* Quick stats footer */}
-      <div className="px-4 py-2 bg-muted/50 border-t border-border">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Calendar className="w-3 h-3" />
-            {createdAt.toLocaleDateString()}
+      {/* Processing Overlay */}
+      {isProcessing && (
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px] flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-white/90 text-sm font-medium">
+              {session.status === 'uploading' && 'Uploading...'}
+              {session.status === 'analyzing' && 'Analyzing outfit...'}
+              {session.status === 'searching' && 'Finding items...'}
+            </p>
           </div>
-          
-          {avgPrice > 0 && (
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3" />
-              Avg: ${avgPrice.toFixed(0)}
-            </div>
-          )}
         </div>
-      </div>
+      )}
+
+      {/* Error Overlay */}
+      {session.status === 'error' && (
+        <div className="absolute inset-0 bg-red-500/10 backdrop-blur-[1px] flex items-center justify-center">
+          <div className="text-center px-4">
+            <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+            <p className="text-red-600 text-sm font-medium">
+              Processing failed
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle gradient border effect */}
+      <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-primary/0 via-primary/0 to-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
     </div>
   );
 } 

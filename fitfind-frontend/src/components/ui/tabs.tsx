@@ -89,16 +89,17 @@ export function TabsContent({ value, children, className }: TabsContentProps) {
   }
 
   const { activeTab } = context;
+  const isActive = activeTab === value;
   
-  if (activeTab !== value) {
-    return null;
-  }
-
   return (
-    <div className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      className
-    )}>
+    <div 
+      className={cn(
+        "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        !isActive && "hidden",
+        className
+      )}
+      data-state={isActive ? "active" : "inactive"}
+    >
       {children}
     </div>
   );

@@ -358,13 +358,6 @@ def check_wishlist_status():
 def upload_file():
     """Handle outfit image upload and process recommendations"""
     try:
-        # Get authenticated user if available
-        user_id = get_current_user_id()
-        if user_id:
-            logger.info(f"Processing upload for authenticated user: {user_id}")
-        else:
-            logger.info("Processing upload for anonymous user")
-        
         # Check if the post request has the file part
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -376,32 +369,51 @@ def upload_file():
             return jsonify({'error': 'No file selected'}), 400
         
         if file and allowed_file(file.filename):
-            # Generate unique filename
+            # Generate unique file ID
             file_id = str(uuid.uuid4())
-            filename = secure_filename(file.filename)
-            file_extension = filename.rsplit('.', 1)[1].lower()
-            unique_filename = f"{file_id}.{file_extension}"
-            
-            # Save uploaded file
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            file.save(file_path)
             
             # Get optional parameters
             country = request.form.get('country', 'us')
             language = request.form.get('language', 'en')
+            user_id = get_current_user_id()
+            
+            # Upload image to Supabase Storage
+            from image_storage_service import storage_service
+            upload_result = storage_service.upload_image(
+                file=file,
+                user_id=user_id,
+                file_id=file_id
+            )
+            
+            if not upload_result.get('success'):
+                return jsonify({
+                    'error': f"Failed to upload image: {upload_result.get('error')}",
+                    'file_id': file_id
+                }), 500
+            
+            # Get the public URL for the uploaded image
+            image_url = upload_result['public_url']
+            storage_path = upload_result['storage_path']
+            
+            # Save uploaded file locally for processing (temporary)
+            temp_filename = f"{file_id}.{upload_result['original_filename'].split('.')[-1]}"
+            temp_file_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
+            
+            # Save file for processing (reset file pointer first)
+            file.seek(0)
+            file.save(temp_file_path)
             
             # Create database session (for both authenticated and anonymous users)
             session_record = None
-            image_url = f"/uploads/{unique_filename}"
             
             if user_id:
-                # Authenticated user - session will be linked to user
+                # Authenticated user
                 try:
                     session_record = db_service.create_search_session(
                         user_id=user_id,
                         file_id=file_id,
-                        image_filename=filename,
-                        image_url=image_url,
+                        image_filename=upload_result['original_filename'],
+                        image_url=image_url,  # Now using the public URL from Supabase Storage
                         country=country,
                         language=language
                     )
@@ -417,8 +429,8 @@ def upload_file():
                 try:
                     session_record = db_service.create_anonymous_search_session(
                         file_id=file_id,
-                        image_filename=filename,
-                        image_url=image_url,
+                        image_filename=upload_result['original_filename'],
+                        image_url=image_url,  # Now using the public URL from Supabase Storage
                         country=country,
                         language=language
                     )
@@ -428,21 +440,33 @@ def upload_file():
                     logger.error(f"Error creating anonymous search session: {str(e)}")
                     # Continue without database session
             
+            # Update session with storage path for cleanup
+            if session_record:
+                db_service.update_search_session(session_record['id'], {
+                    'storage_path': storage_path
+                })
+            
             # Generate output paths
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_output_path = os.path.join(app.config['RESULTS_FOLDER'], f"results_{file_id}_{timestamp}")
             
-            # Process the outfit image
-            print(f"Processing outfit image: {file_path}")
+            # Process the outfit image (using temporary local file)
+            print(f"Processing outfit image: {temp_file_path}")
             result = outfit_recommendation_with_cleaned_data(
-                image_path=file_path,
+                image_path=temp_file_path,
                 country=country,
                 language=language,
                 output_path=f"{base_output_path}.csv",
-                enable_redo=True,  # Enable redo functionality
+                enable_redo=True,
                 save_raw_json=True,
                 save_cleaned_json=True
             )
+            
+            # Clean up temporary file
+            try:
+                os.remove(temp_file_path)
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file: {e}")
             
             # Check for errors
             if "error" in result:
@@ -456,7 +480,7 @@ def upload_file():
                 # Determine appropriate status code based on error type
                 error_message = result["error"]
                 if "No clothing items identified" in error_message:
-                    status_code = 422  # Unprocessable Entity - valid request but can't process the image
+                    status_code = 422  # Unprocessable Entity
                 elif "API key" in error_message or "environment" in error_message:
                     status_code = 500  # Server configuration error
                 else:
@@ -493,22 +517,22 @@ def upload_file():
                         print(f"WARNING: Failed to save clothing items for session {session_record['id']}")
                         # Log but don't fail the request since we have the data
             
-            # Prepare conversation context for JSON serialization (remove image_bytes)
+            # Prepare conversation context for JSON serialization
             conversation_context = result.get('conversation_context')
             if conversation_context and 'image_bytes' in conversation_context:
-                # Create a copy without image_bytes for JSON serialization
                 conversation_context = {k: v for k, v in conversation_context.items() if k != 'image_bytes'}
             
-            # Prepare response
+            # Prepare response with public URL
             response_data = {
                 'success': True,
                 'file_id': file_id,
-                'filename': filename,
+                'filename': upload_result['original_filename'],
+                'image_url': image_url,  # Public URL for frontend display
                 'num_items_identified': result.get('num_items_identified', 0),
                 'num_products_found': result.get('num_products_found', 0),
                 'search_queries': result.get('search_queries', []),
                 'cleaned_data': result.get('cleaned_data', {}),
-                'conversation_context': conversation_context,  # For redo functionality
+                'conversation_context': conversation_context,
                 'session_id': session_record['id'] if session_record else None,
                 'files': {
                     'csv_file': result.get('results_saved_to'),
@@ -711,28 +735,97 @@ def result_file(filename):
     """Serve result files"""
     return send_from_directory(app.config['RESULTS_FOLDER'], filename)
 
+@app.route('/api/storage/cleanup', methods=['POST'])
+def cleanup_storage():
+    """Clean up old anonymous images and orphaned files"""
+    try:
+        from image_storage_service import storage_service
+        
+        # Clean up anonymous images older than 24 hours
+        cleanup_result = storage_service.cleanup_anonymous_images(older_than_hours=24)
+        
+        if cleanup_result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f"Cleaned up {cleanup_result['deleted_count']} old anonymous images",
+                'deleted_count': cleanup_result['deleted_count']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': cleanup_result.get('error')
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/storage/status', methods=['GET'])
+@require_auth
+def get_storage_status():
+    """Get storage usage statistics for authenticated user"""
+    try:
+        user_id = get_current_user_id()
+        
+        # Get user's image count from database
+        user_sessions = db_service.get_user_search_sessions(user_id, limit=1000)
+        
+        # Calculate statistics
+        total_sessions = len(user_sessions)
+        sessions_with_images = sum(1 for session in user_sessions if session.get('image_url'))
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'statistics': {
+                'total_sessions': total_sessions,
+                'sessions_with_images': sessions_with_images,
+                'storage_usage': 'Calculated from Supabase Storage API'
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/health')
 def health_check():
-    """Health check endpoint with database status"""
+    """Enhanced health check endpoint with storage status"""
     try:
         # Check database health
         db_health = db_service.health_check()
         
+        # Check storage health
+        from image_storage_service import storage_service
+        storage_health = storage_service.health_check()
+        
+        overall_status = 'healthy' if (
+            db_health.get('status') == 'healthy' and 
+            storage_health.get('status') == 'healthy'
+        ) else 'unhealthy'
+        
         return jsonify({
-            'status': 'healthy',
+            'status': overall_status,
             'timestamp': datetime.now().isoformat(),
+            'services': {
+                'database': db_health,
+                'storage': storage_health
+            },
             'upload_folder': app.config['UPLOAD_FOLDER'],
-            'results_folder': app.config['RESULTS_FOLDER'],
-            'database': db_health
+            'results_folder': app.config['RESULTS_FOLDER']
         })
     except Exception as e:
         return jsonify({
             'status': 'unhealthy',
             'timestamp': datetime.now().isoformat(),
             'error': str(e),
-            'database': {
-                'status': 'unhealthy',
-                'error': str(e)
+            'services': {
+                'database': {'status': 'unknown'},
+                'storage': {'status': 'unknown'}
             }
         }), 500
 

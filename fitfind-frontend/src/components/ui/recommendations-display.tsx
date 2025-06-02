@@ -97,14 +97,14 @@ export function RecommendationsDisplay({
         </div>
 
         {/* Tabs Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {clothingTypes.map(type => {
             const group = groupedProducts[type];
             return (
               <TabsContent 
                 key={type} 
                 value={type} 
-                className="h-full flex flex-col"
+                className="h-full flex flex-col m-0 p-0 data-[state=inactive]:hidden"
               >
                 {/* Section Header */}
                 <div className="flex-shrink-0 mb-4 p-4 bg-muted/30 rounded-lg border">
