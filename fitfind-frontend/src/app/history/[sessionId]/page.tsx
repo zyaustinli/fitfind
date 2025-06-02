@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, RotateCcw, Share2, Calendar, Clock, CheckCircle, Loader, AlertTriangle, ImageIcon } from "lucide-react";
+import { ArrowLeft, RotateCcw, Share2, Calendar, Clock, CheckCircle, Loader, AlertTriangle, ImageIcon, Trash2 } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +58,7 @@ export default function SearchSessionDetailPage() {
   const [imageError, setImageError] = useState(false);
   const [savedProducts, setSavedProducts] = useState<Set<string>>(new Set());
   const [isRedoing, setIsRedoing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { getSessionDetails } = useSearchHistory({
     autoFetch: false,
@@ -220,6 +221,35 @@ export default function SearchSessionDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!sessionItem || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      // Call the delete API endpoint
+      const response = await fetch(`/api/history/${sessionItem.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        // Navigate back to history after successful deletion
+        router.push('/history');
+      } else {
+        const errorData = await response.json();
+        console.error('Failed to delete search history item:', errorData.error);
+        // You could add toast notification here
+      }
+    } catch (error) {
+      console.error('Error deleting search history item:', error);
+      // You could add toast notification here
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleSaveProduct = (product: ClothingItem) => {
     if (!user) {
       alert('Please sign in to save items to your wishlist.');
@@ -304,6 +334,22 @@ export default function SearchSessionDetailPage() {
                   <Share2 className="w-4 h-4" />
                   Share
                 </Button>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
+                >
+                  {isDeleting ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Delete
+                </Button>
+                
                 {session.status === 'completed' && session.conversation_context && (
                   <Button 
                     variant="default" 

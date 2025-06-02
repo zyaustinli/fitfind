@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, ImageIcon, AlertTriangle, Clock, CheckCircle, Loader } from "lucide-react";
+import { Eye, ImageIcon, AlertTriangle, Clock, CheckCircle, Loader, Trash2 } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { SearchHistoryItem } from "@/types";
@@ -113,6 +113,24 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
           </div>
         )}
       </div>
+
+      {/* Delete Button - Top Right Corner */}
+      {onDelete && (
+        <div className="absolute top-3 right-3 z-20">
+          <Button
+            variant="secondary"
+            size="sm"
+            className={cn(
+              "h-8 w-8 p-0 bg-red-500/90 hover:bg-red-600 border-0 shadow-lg",
+              "opacity-0 group-hover:opacity-100 transition-all duration-300",
+              "transform translate-x-2 group-hover:translate-x-0"
+            )}
+            onClick={handleDelete}
+          >
+            <Trash2 className="w-4 h-4 text-white" />
+          </Button>
+        </div>
+      )}
 
       {/* Status Indicator */}
       {(isProcessing || session.status === 'error') && (

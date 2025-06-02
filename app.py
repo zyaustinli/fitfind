@@ -144,8 +144,8 @@ def get_search_history():
         
         history = db_service.get_user_search_history(user_id, limit, offset, include_details)
         
-        # Get total count for better pagination
-        total_count_response = db_service.service_client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).execute()
+        # Get total count for better pagination (exclude soft-deleted items)
+        total_count_response = db_service.service_client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).is_("deleted_at", "null").execute()
         total_count = total_count_response.count or 0
         
         return jsonify({
@@ -164,6 +164,32 @@ def get_search_history():
         return jsonify({
             'success': False,
             'error': f'Error getting search history: {str(e)}'
+        }), 500
+
+@app.route('/api/history/<history_id>', methods=['DELETE'])
+@require_auth
+def delete_search_history_item(history_id):
+    """Soft delete a search history item"""
+    try:
+        user_id = get_current_user_id()
+        
+        success = db_service.soft_delete_search_history_item(user_id, history_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Search history item deleted successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Search history item not found or already deleted'
+            }), 404
+    except Exception as e:
+        print(f"Error deleting search history item: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error deleting search history item: {str(e)}'
         }), 500
 
 @app.route('/api/history/<session_id>', methods=['GET'])

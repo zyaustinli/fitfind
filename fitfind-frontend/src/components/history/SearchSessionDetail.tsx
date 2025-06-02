@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ArrowLeft, RotateCcw, Download, Share2, ImageIcon, X, AlertTriangle, Calendar, Clock, CheckCircle, Loader } from "lucide-react";
+import { ArrowLeft, RotateCcw, Download, Share2, ImageIcon, X, AlertTriangle, Calendar, Clock, CheckCircle, Loader, Trash2 } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ interface SearchSessionDetailProps {
   item: SearchHistoryItem;
   onBack: () => void;
   onRedo?: (item: SearchHistoryItem) => void;
+  onDelete?: (item: SearchHistoryItem) => void;
   onSaveProduct?: (product: ClothingItem) => void;
   onRemoveProduct?: (product: ClothingItem) => void;
   isProductSaved?: (product: ClothingItem) => boolean;
@@ -55,6 +56,7 @@ export function SearchSessionDetail({
   item, 
   onBack, 
   onRedo, 
+  onDelete,
   onSaveProduct, 
   onRemoveProduct, 
   isProductSaved,
@@ -64,6 +66,7 @@ export function SearchSessionDetail({
   const [imageError, setImageError] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRedoing, setIsRedoing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const session = item.search_sessions;
   const statusInfo = statusConfig[session.status];
@@ -180,6 +183,17 @@ export function SearchSessionDetail({
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(item);
+      // The parent component should handle navigation back to history
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleImageClick = () => {
     setIsModalOpen(true);
   };
@@ -228,6 +242,24 @@ export function SearchSessionDetail({
                 <Share2 className="w-4 h-4" />
                 Share
               </Button>
+              
+              {onDelete && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
+                >
+                  {isDeleting ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Delete
+                </Button>
+              )}
+              
               {session.status === 'completed' && session.conversation_context && (
                 <Button 
                   variant="default" 

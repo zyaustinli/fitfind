@@ -420,6 +420,7 @@ class DatabaseService:
                                )
                            """)
                            .eq("user_id", user_id)
+                           .is_("deleted_at", "null")
                            .order("created_at", desc=True)
                            .range(offset, offset + limit - 1)
                            .execute())
@@ -428,6 +429,7 @@ class DatabaseService:
                 response = (self.service_client.table("user_search_history")
                            .select("*, search_sessions(*)")
                            .eq("user_id", user_id)
+                           .is_("deleted_at", "null")
                            .order("created_at", desc=True)
                            .range(offset, offset + limit - 1)
                            .execute())
@@ -436,6 +438,48 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error getting user search history: {e}")
             return []
+    
+    def soft_delete_search_history_item(self, user_id: str, history_id: str) -> bool:
+        """Soft delete a search history item (hide from user's view)"""
+        try:
+            # Update the history item to set deleted_at timestamp
+            response = (self.service_client.table("user_search_history")
+                       .update({"deleted_at": datetime.now().isoformat()})
+                       .eq("id", history_id)
+                       .eq("user_id", user_id)
+                       .is_("deleted_at", "null")  # Only delete if not already deleted
+                       .execute())
+            
+            if response.data:
+                logger.info(f"Successfully soft deleted search history item {history_id} for user {user_id}")
+                return True
+            else:
+                logger.warning(f"Search history item {history_id} not found or already deleted for user {user_id}")
+                return False
+        except Exception as e:
+            logger.error(f"Error soft deleting search history item {history_id}: {e}")
+            return False
+
+    def restore_search_history_item(self, user_id: str, history_id: str) -> bool:
+        """Restore a soft deleted search history item"""
+        try:
+            # Update the history item to clear deleted_at timestamp
+            response = (self.service_client.table("user_search_history")
+                       .update({"deleted_at": None})
+                       .eq("id", history_id)
+                       .eq("user_id", user_id)
+                       .not_.is_("deleted_at", "null")  # Only restore if actually deleted
+                       .execute())
+            
+            if response.data:
+                logger.info(f"Successfully restored search history item {history_id} for user {user_id}")
+                return True
+            else:
+                logger.warning(f"Search history item {history_id} not found or not deleted for user {user_id}")
+                return False
+        except Exception as e:
+            logger.error(f"Error restoring search history item {history_id}: {e}")
+            return False
     
     def get_search_session_details(self, session_id: str, user_id: str) -> Optional[Dict]:
         """Get complete search session details with all clothing items and products"""

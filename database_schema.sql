@@ -83,6 +83,7 @@ CREATE TABLE user_search_history (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     search_session_id UUID REFERENCES search_sessions(id) ON DELETE CASCADE,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -94,6 +95,7 @@ CREATE INDEX idx_clothing_items_session_id ON clothing_items(search_session_id);
 CREATE INDEX idx_products_clothing_item_id ON products(clothing_item_id);
 CREATE INDEX idx_user_saved_items_user_id ON user_saved_items(user_id);
 CREATE INDEX idx_user_search_history_user_id ON user_search_history(user_id);
+CREATE INDEX idx_user_search_history_deleted_at ON user_search_history(deleted_at);
 CREATE INDEX idx_products_source ON products(source);
 CREATE INDEX idx_products_price ON products(price);
 
@@ -168,6 +170,8 @@ CREATE POLICY "Users can view own search history" ON user_search_history
     FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own search history" ON user_search_history
     FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own search history" ON user_search_history
+    FOR UPDATE USING (auth.uid() = user_id);
 
 -- Function to automatically create user profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
