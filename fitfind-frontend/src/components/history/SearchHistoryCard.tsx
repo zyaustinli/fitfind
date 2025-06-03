@@ -12,6 +12,7 @@ interface SearchHistoryCardProps {
   onRedo?: (item: SearchHistoryItem) => void;
   onDelete?: (item: SearchHistoryItem) => void;
   className?: string;
+  isDeleting?: boolean;
 }
 
 const statusConfig = {
@@ -47,7 +48,14 @@ const statusConfig = {
   }
 };
 
-export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }: SearchHistoryCardProps) {
+export function SearchHistoryCard({ 
+  item, 
+  onView, 
+  onRedo, 
+  onDelete, 
+  className,
+  isDeleting = false 
+}: SearchHistoryCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   
@@ -82,6 +90,7 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
         "shadow-sm hover:shadow-xl hover:shadow-primary/10",
         "transition-all duration-300 ease-out",
         "hover:scale-[1.02] hover:-translate-y-1",
+        isDeleting && "opacity-50 pointer-events-none",
         className
       )}
       onClick={handleView}
@@ -123,11 +132,17 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
             className={cn(
               "h-8 w-8 p-0 bg-red-500/90 hover:bg-red-600 border-0 shadow-lg",
               "opacity-0 group-hover:opacity-100 transition-all duration-300",
-              "transform translate-x-2 group-hover:translate-x-0"
+              "transform translate-x-2 group-hover:translate-x-0",
+              isDeleting && "opacity-100 translate-x-0"
             )}
             onClick={handleDelete}
+            disabled={isDeleting}
           >
-            <Trash2 className="w-4 h-4 text-white" />
+            {isDeleting ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4 text-white" />
+            )}
           </Button>
         </div>
       )}
@@ -205,6 +220,18 @@ export function SearchHistoryCard({ item, onView, onRedo, onDelete, className }:
               {session.status === 'uploading' && 'Uploading...'}
               {session.status === 'analyzing' && 'Analyzing outfit...'}
               {session.status === 'searching' && 'Finding items...'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Deleting Overlay */}
+      {isDeleting && (
+        <div className="absolute inset-0 bg-red-500/20 backdrop-blur-[2px] flex items-center justify-center z-30">
+          <div className="text-center">
+            <div className="w-8 h-8 border-3 border-red-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-red-600 text-sm font-medium">
+              Deleting...
             </p>
           </div>
         </div>

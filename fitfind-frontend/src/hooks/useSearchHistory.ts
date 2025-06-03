@@ -6,9 +6,10 @@ import {
   PaginationInfo,
   LoadingState,
   ErrorState,
-  SearchSessionDetails
+  SearchSessionDetails,
+  SearchHistoryDeleteResponse
 } from '@/types';
-import { getSearchHistory, getSearchSessionDetails } from '@/lib/api';
+import { getSearchHistory, getSearchSessionDetails, deleteSearchHistory } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStableFetch } from './useStableFetch';
 
@@ -27,6 +28,7 @@ export interface UseSearchHistoryReturn {
   // State
   loading: LoadingState;
   error: ErrorState;
+  deletingItems: Set<string>; // Track items currently being deleted
   
   // Actions
   fetchHistory: (options?: { reset?: boolean; includeDetails?: boolean }) => Promise<void>;
@@ -35,6 +37,8 @@ export interface UseSearchHistoryReturn {
   setFilters: (filters: Partial<SearchHistoryFilters>) => void;
   resetFilters: () => void;
   getSessionDetails: (sessionId: string) => Promise<SearchSessionDetails | null>;
+  deleteHistoryItem: (historyId: string) => Promise<{ success: boolean; error?: string }>;
+  isItemDeleting: (historyId: string) => boolean; // Helper to check if item is being deleted
   
   // Computed
   filteredHistory: SearchHistoryItem[];
@@ -71,6 +75,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     message: undefined,
     code: undefined
   });
+  const [deletingItems, setDeletingItems] = useState<Set<string>>(new Set());
 
   const mountedRef = useRef(true);
   const fetchingRef = useRef(false);
@@ -232,6 +237,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   // Reset initialization flag when user changes
   useEffect(() => {
     hasInitializedRef.current = false;
+    // Clear any pending delete operations when user changes
+    setDeletingItems(new Set());
   }, [user?.id]);
 
   const getSessionDetails = useCallback(async (sessionId: string) => {
@@ -249,6 +256,130 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     }
   }, [user]);
 
+  /**
+   * Delete a search history item with optimistic updates and proper error handling
+   * 
+   * This function implements optimistic UI updates, meaning the item is removed
+   * from the UI immediately while the API call is in progress. If the API call
+   * fails, the item is restored to its original position.
+   * 
+   * Features:
+   * - Optimistic updates for immediate UI feedback
+   * - Automatic rollback on API failure
+   * - Prevents duplicate deletion attempts
+   * - Updates pagination counts
+   * - Comprehensive error handling
+   * - Component unmount safety
+   * 
+   * @param historyId - The ID of the search history item to delete
+   * @returns Promise resolving to success status and optional error message
+   */
+  const deleteHistoryItem = useCallback(async (historyId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!user) {
+      return { 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      };
+    }
+
+    // Check if this item is already being deleted
+    if (deletingItems.has(historyId)) {
+      return { 
+        success: false, 
+        error: 'Item is already being deleted.' 
+      };
+    }
+
+    // Find the item to delete for potential rollback
+    const itemToDelete = history.find(item => item.id === historyId);
+    if (!itemToDelete) {
+      return { 
+        success: false, 
+        error: 'History item not found.' 
+      };
+    }
+
+    // Store original state for potential rollback
+    const originalHistory = [...history];
+    const originalPagination = { ...pagination };
+
+    try {
+      // Mark item as being deleted
+      setDeletingItems(prev => new Set([...prev, historyId]));
+
+      // Optimistic update - remove item immediately from UI
+      setHistory(prev => prev.filter(item => item.id !== historyId));
+      
+      // Adjust pagination count
+      setPagination(prev => ({
+        ...prev,
+        total_count: Math.max(0, (prev.total_count || 0) - 1)
+      }));
+
+      // Clear any previous errors
+      clearError();
+
+      // Make the actual API call
+      const response: SearchHistoryDeleteResponse = await deleteSearchHistory(historyId);
+
+      if (!mountedRef.current) {
+        // Component unmounted, don't update state
+        return { success: true };
+      }
+
+      if (response.success) {
+        // Success! The optimistic update was correct
+        console.log('Successfully deleted history item:', historyId);
+        return { success: true };
+      } else {
+        // API returned error, rollback the optimistic update
+        throw new Error(response.error || 'Failed to delete history item');
+      }
+    } catch (err) {
+      if (!mountedRef.current) {
+        // Component unmounted, don't update state
+        return { success: false, error: 'Operation cancelled' };
+      }
+
+      // Rollback optimistic update
+      setHistory(originalHistory);
+      setPagination(originalPagination);
+
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete history item';
+      
+      // Set error state for user feedback
+      setError({
+        hasError: true,
+        message: errorMessage,
+        code: undefined
+      });
+
+      console.error('Failed to delete history item:', err);
+      return { 
+        success: false, 
+        error: errorMessage 
+      };
+    } finally {
+      // Always remove from deleting state, whether success or failure
+      if (mountedRef.current) {
+        setDeletingItems(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(historyId);
+          return newSet;
+        });
+      }
+    }
+  }, [user, history, pagination, deletingItems, clearError]);
+
+  const isItemDeleting = useCallback((historyId: string): boolean => {
+    return deletingItems.has(historyId);
+  }, [deletingItems]);
+
+  // Utility function to clear all deleting states (useful for cleanup)
+  const clearDeletingStates = useCallback(() => {
+    setDeletingItems(new Set());
+  }, []);
+
   return {
     // Data
     history,
@@ -258,6 +389,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     // State
     loading,
     error,
+    deletingItems,
     
     // Actions
     fetchHistory,
@@ -266,6 +398,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     setFilters,
     resetFilters,
     getSessionDetails,
+    deleteHistoryItem,
+    isItemDeleting,
     
     // Computed
     filteredHistory,

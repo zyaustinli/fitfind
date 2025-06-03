@@ -137,6 +137,12 @@ export interface SearchHistoryResponse {
   error?: string;
 }
 
+export interface SearchHistoryDeleteResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 // Wishlist Types
 export interface WishlistItemDetailed {
   id: string;
