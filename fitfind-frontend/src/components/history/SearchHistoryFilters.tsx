@@ -12,6 +12,7 @@ interface SearchHistoryFiltersProps {
   filters?: SearchHistoryFilters;
   onFiltersChange?: (filters: Partial<SearchHistoryFilters>) => void;
   onReset?: () => void;
+  resultCount?: number;
   totalCount?: number;
   className?: string;
 }
@@ -20,6 +21,7 @@ export function SearchHistoryFilters({
   filters = { sortBy: 'newest' },
   onFiltersChange,
   onReset,
+  resultCount,
   totalCount,
   className 
 }: SearchHistoryFiltersProps) {
@@ -79,7 +81,15 @@ export function SearchHistoryFilters({
         {/* Total Count Display */}
         {totalCount !== undefined && (
           <div className="text-sm text-muted-foreground">
-            {totalCount} {totalCount === 1 ? 'search' : 'searches'}
+            {hasActiveFilters && resultCount !== undefined ? (
+              <>
+                {resultCount} of {totalCount} {totalCount === 1 ? 'search' : 'searches'}
+              </>
+            ) : (
+              <>
+                {totalCount} {totalCount === 1 ? 'search' : 'searches'}
+              </>
+            )}
           </div>
         )}
       </div>

@@ -7,8 +7,11 @@ import { cn, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
+import { ConfirmDeleteDialog } from "@/components/history";
 import { useAuth } from "@/contexts/AuthContext";
+import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useToast } from "@/components/ui/toast";
 import type { SearchHistoryItem, ClothingItem, BackendCleanedData } from "@/types";
 import { redoSearch } from "@/lib/api";
 
@@ -49,8 +52,19 @@ export default function SearchSessionDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const sessionId = params.sessionId as string;
-
+  const { toast } = useToast();
+  const historyContext = useHistoryContext();
+  
+  const { 
+    getSessionDetails, 
+    deleteHistoryItem,
+    isItemDeleting,
+    canUndo,
+    undoDelete
+  } = useSearchHistory({
+    enableUndo: false
+  });
+  
   const [sessionItem, setSessionItem] = useState<SearchHistoryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,51 +72,71 @@ export default function SearchSessionDetailPage() {
   const [imageError, setImageError] = useState(false);
   const [savedProducts, setSavedProducts] = useState<Set<string>>(new Set());
   const [isRedoing, setIsRedoing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const { getSessionDetails } = useSearchHistory({
-    autoFetch: false,
-    includeDetails: true
+  const sessionId = params.sessionId as string;
+
+  // Listen to global deletion events
+  useHistoryEvents(['ITEM_DELETED'], (event) => {
+    if (event.type === 'ITEM_DELETED' && sessionItem && event.historyId === sessionItem.id) {
+      // This item was deleted from another page, navigate back
+      toast({
+        type: "info",
+        title: "Item Deleted",
+        description: "This search was deleted and is no longer available.",
+        duration: 5000
+      });
+      
+      setTimeout(() => {
+        router.push('/history');
+      }, 1000);
+    }
   });
 
   // Load session details
   useEffect(() => {
-    const loadSessionDetails = async () => {
-      if (!sessionId || authLoading) return;
-      
-      if (!user) {
-        router.push('/history');
-        return;
-      }
+    async function loadSessionDetails() {
+      if (!user || !sessionId) return;
+
+      setLoading(true);
+      setError(null);
 
       try {
-        setLoading(true);
-        setError(null);
-        
-        const detailedSession = await getSessionDetails(sessionId);
-        if (detailedSession) {
-          // Convert to SearchHistoryItem format
+        // Try to get from current detail item first
+        const currentItem = historyContext.getCurrentDetailItem();
+        if (currentItem && currentItem.search_session_id === sessionId) {
+          setSessionItem(currentItem);
+          setLoading(false);
+          return;
+        }
+
+        // Otherwise fetch details
+        const details = await getSessionDetails(sessionId);
+        if (details) {
+          // Create a SearchHistoryItem from session details
           const historyItem: SearchHistoryItem = {
-            id: detailedSession.id,
-            user_id: user.id,
-            search_session_id: sessionId,
-            created_at: detailedSession.created_at,
-            search_sessions: detailedSession
+            id: details.id, // This might not be the history ID, but we'll use session ID
+            user_id: details.user_id || '',
+            search_session_id: details.id,
+            created_at: details.created_at,
+            search_sessions: details
           };
+          
           setSessionItem(historyItem);
+          historyContext.setCurrentDetailItem(historyItem);
         } else {
-          setError('Session not found');
+          setError('Search session not found or access denied');
         }
       } catch (err) {
         console.error('Error loading session details:', err);
-        setError('Failed to load session details');
+        setError('Failed to load search session details');
       } finally {
         setLoading(false);
       }
-    };
+    }
 
     loadSessionDetails();
-  }, [sessionId, user, authLoading, getSessionDetails, router]);
+  }, [user, sessionId, getSessionDetails, historyContext]);
 
   // Transform clothing items to ClothingItem format for RecommendationsDisplay
   const transformedResults: ClothingItem[] = useMemo(() => {
@@ -174,27 +208,73 @@ export default function SearchSessionDetailPage() {
   }, [sessionItem]);
 
   const handleBackToHistory = () => {
+    historyContext.setCurrentDetailItem(null);
     router.push('/history');
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
+    if (!sessionItem) return;
+    
+    try {
+      await navigator.share({
+        title: 'FitFind Search Results',
+        text: `Check out these fashion recommendations from FitFind!`,
+        url: window.location.href
+      });
+    } catch (err) {
+      // Fallback to clipboard
       try {
-        await navigator.share({
-          title: `Search Session: ${sessionItem?.search_sessions.image_filename}`,
-          text: `Found ${sessionItem?.search_sessions.num_products_found} products from ${sessionItem?.search_sessions.num_items_identified} clothing items`,
-          url: window.location.href,
+        await navigator.clipboard.writeText(window.location.href);
+        toast({
+          type: "success",
+          title: "Link Copied",
+          description: "Share link copied to clipboard"
         });
-      } catch (error) {
-        console.log('Error sharing:', error);
+      } catch (clipboardErr) {
+        console.error('Failed to share or copy:', clipboardErr);
       }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
     }
   };
 
-  const handleRedoSearch = async () => {
-    if (!sessionItem?.search_sessions.conversation_context || isRedoing) return;
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!sessionItem) return;
+
+    try {
+      const result = await deleteHistoryItem(sessionItem.id);
+      
+      if (result.success) {
+        // Show success message and navigate back
+        toast({
+          type: "success", 
+          title: "Search Deleted",
+          description: "The search has been removed from your history."
+        });
+        
+        // Navigate back after a short delay
+        setTimeout(() => {
+          router.push('/history');
+        }, 1000);
+      } else {
+        throw new Error(result.error || 'Failed to delete search');
+      }
+    } catch (error) {
+      console.error('Error deleting search history item:', error);
+      toast({
+        type: "error",
+        title: "Delete Failed", 
+        description: error instanceof Error ? error.message : "Failed to delete search. Please try again."
+      });
+    } finally {
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleRedo = async () => {
+    if (!sessionItem || !sessionItem.search_sessions.conversation_context || isRedoing) return;
 
     setIsRedoing(true);
     try {
@@ -210,49 +290,44 @@ export default function SearchSessionDetailPage() {
       );
 
       if (response.success) {
-        router.push('/history');
+        toast({
+          type: "success",
+          title: "Search Updated",
+          description: "Your search has been redone with fresh results."
+        });
+        
+        // Reload session details to get updated results
+        const updatedDetails = await getSessionDetails(sessionId);
+        if (updatedDetails) {
+          const updatedItem: SearchHistoryItem = {
+            ...sessionItem,
+            search_sessions: updatedDetails
+          };
+          setSessionItem(updatedItem);
+          historyContext.setCurrentDetailItem(updatedItem);
+        }
       } else {
         throw new Error(response.error || 'Failed to redo search');
       }
     } catch (error) {
       console.error('Error redoing search:', error);
+      toast({
+        type: "error",
+        title: "Redo Failed",
+        description: error instanceof Error ? error.message : "Failed to redo search. Please try again."
+      });
     } finally {
       setIsRedoing(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!sessionItem || isDeleting) return;
-
-    setIsDeleting(true);
-    try {
-      // Call the delete API endpoint
-      const response = await fetch(`/api/history/${sessionItem.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        // Navigate back to history after successful deletion
-        router.push('/history');
-      } else {
-        const errorData = await response.json();
-        console.error('Failed to delete search history item:', errorData.error);
-        // You could add toast notification here
-      }
-    } catch (error) {
-      console.error('Error deleting search history item:', error);
-      // You could add toast notification here
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
   const handleSaveProduct = (product: ClothingItem) => {
     if (!user) {
-      alert('Please sign in to save items to your wishlist.');
+      toast({
+        type: "error",
+        title: "Sign In Required",
+        description: "Please sign in to save items to your wishlist."
+      });
       return;
     }
     setSavedProducts(prev => new Set([...prev, product.product_id || '']));
@@ -290,10 +365,13 @@ export default function SearchSessionDetailPage() {
         <div className="max-w-7xl mx-auto">
           <div className="h-96 flex items-center justify-center">
             <div className="text-center">
-              <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+              <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-2">
-                {error || 'Session not found'}
+                {error || 'Search session not found'}
               </h3>
+              <p className="text-muted-foreground mb-4">
+                The search session you're looking for doesn't exist or you don't have access to it.
+              </p>
               <Button onClick={handleBackToHistory} variant="outline">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to History
@@ -311,6 +389,7 @@ export default function SearchSessionDetailPage() {
   const createdAt = new Date(sessionItem.created_at);
   const timeAgo = formatDistanceToNow(createdAt);
   const isProcessing = session.status === 'uploading' || session.status === 'analyzing' || session.status === 'searching';
+  const isDeleting = isItemDeleting(sessionItem.id);
 
   return (
     <div className="h-full flex">
@@ -338,7 +417,7 @@ export default function SearchSessionDetailPage() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={handleDelete}
+                  onClick={handleDeleteClick}
                   disabled={isDeleting}
                   className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
                 >
@@ -354,7 +433,7 @@ export default function SearchSessionDetailPage() {
                   <Button 
                     variant="default" 
                     size="sm" 
-                    onClick={handleRedoSearch}
+                    onClick={handleRedo}
                     disabled={isRedoing}
                     className="gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
                   >
@@ -489,7 +568,7 @@ export default function SearchSessionDetailPage() {
                   </p>
                   {session.conversation_context && (
                     <Button
-                      onClick={handleRedoSearch}
+                      onClick={handleRedo}
                       disabled={isRedoing}
                       variant="outline"
                       className="gap-2"
@@ -534,6 +613,15 @@ export default function SearchSessionDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDeleteDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        item={sessionItem}
+        onConfirm={handleConfirmDelete}
+        loading={isDeleting}
+      />
     </div>
   );
 } 
