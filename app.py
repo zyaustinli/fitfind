@@ -379,6 +379,43 @@ def check_wishlist_status():
             'error': f'Error checking wishlist status: {str(e)}'
         }), 500
 
+@app.route('/api/wishlist/update', methods=['PUT'])
+@require_auth
+def update_wishlist_item():
+    """Update a wishlist item (notes, tags)"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+
+        if not data or 'wishlist_item_id' not in data:
+            return jsonify({'success': False, 'error': 'Wishlist Item ID is required'}), 400
+
+        wishlist_item_id = data['wishlist_item_id']
+        updates = data.get('updates', {})
+
+        if not updates:
+            return jsonify({'success': False, 'error': 'No update data provided'}), 400
+
+        updated_item = db_service.update_wishlist_item(wishlist_item_id, user_id, updates)
+
+        if updated_item:
+            return jsonify({
+                'success': True,
+                'item': updated_item,
+                'message': 'Wishlist item updated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update wishlist item. It may not exist or you may not have permission.'
+            }), 404
+    except Exception as e:
+        print(f"Error updating wishlist item: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error updating wishlist item: {str(e)}'
+        }), 500
+
 @app.route('/api/upload', methods=['POST'])
 @optional_auth
 def upload_file():

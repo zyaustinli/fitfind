@@ -11,6 +11,7 @@ import { ConfirmDeleteDialog } from "@/components/history";
 import { useAuth } from "@/contexts/AuthContext";
 import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useWishlist } from "@/hooks/useWishlist"; // Import the wishlist hook
 import { useToast } from "@/components/ui/toast";
 import type { SearchHistoryItem, ClothingItem, BackendCleanedData } from "@/types";
 import { redoSearch } from "@/lib/api";
@@ -64,13 +65,14 @@ export default function SearchSessionDetailPage() {
   } = useSearchHistory({
     enableUndo: false
   });
+
+  const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
   
   const [sessionItem, setSessionItem] = useState<SearchHistoryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [savedProducts, setSavedProducts] = useState<Set<string>>(new Set());
   const [isRedoing, setIsRedoing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -321,7 +323,7 @@ export default function SearchSessionDetailPage() {
     }
   };
 
-  const handleSaveProduct = (product: ClothingItem) => {
+  const handleSaveProduct = async (product: ClothingItem) => {
     if (!user) {
       toast({
         type: "error",
@@ -330,19 +332,20 @@ export default function SearchSessionDetailPage() {
       });
       return;
     }
-    setSavedProducts(prev => new Set([...prev, product.product_id || '']));
+    if (product.product_id) {
+      await addItem(product.product_id);
+    }
   };
 
-  const handleRemoveProduct = (product: ClothingItem) => {
-    setSavedProducts(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(product.product_id || '');
-      return newSet;
-    });
+  const handleRemoveProduct = async (product: ClothingItem) => {
+    if (!user) return;
+    if (product.product_id) {
+      await removeItem(product.product_id);
+    }
   };
 
   const isProductSaved = (product: ClothingItem) => {
-    return savedProducts.has(product.product_id || '');
+    return product.product_id ? isInWishlist(product.product_id) : false;
   };
 
   // Loading state

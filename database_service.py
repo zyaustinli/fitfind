@@ -244,38 +244,39 @@ class DatabaseService:
     
     # Saved Items (Wishlist) Management
     def add_to_wishlist(self, user_id: str, product_id: str, notes: str = None, tags: List[str] = None) -> Optional[Dict]:
-        """Add item to user's wishlist"""
+        """Add item to user's wishlist using external product ID"""
         try:
-            # First, validate that the product exists
-            product_response = self.service_client.table("products").select("id, title, source").eq("id", product_id).execute()
+            # The frontend sends the external_id. We need to find the internal UUID.
+            product_response = self.service_client.table("products").select("id, title, source").eq("external_id", product_id).limit(1).execute()
+            
             if not product_response.data:
-                logger.error(f"Product not found: {product_id}")
+                logger.error(f"Product not found with external_id: {product_id}")
                 return None
             
-            # Check if item is already in wishlist
+            internal_product_uuid = product_response.data[0]['id']
+
+            # Check if item is already in wishlist using the internal UUID
             existing_response = (self.service_client.table("user_saved_items")
                                .select("id")
                                .eq("user_id", user_id)
-                               .eq("product_id", product_id)
+                               .eq("product_id", internal_product_uuid)
                                .execute())
-            
+
             if existing_response.data:
                 logger.warning(f"Product {product_id} already in wishlist for user {user_id}")
-                return None  # Could also raise a specific exception here
-            
+                return None
+
             wishlist_data = {
                 "user_id": user_id,
-                "product_id": product_id,
+                "product_id": internal_product_uuid, # Use the internal UUID here
                 "notes": notes,
                 "tags": tags or []
             }
-            
-            # Insert the wishlist item and return with product details
+
             response = self.service_client.table("user_saved_items").insert(wishlist_data).execute()
-            
+
             if response.data:
                 wishlist_item = response.data[0]
-                # Include product details in the response
                 wishlist_item["products"] = product_response.data[0]
                 return wishlist_item
             
@@ -285,12 +286,20 @@ class DatabaseService:
             return None
     
     def remove_from_wishlist(self, user_id: str, product_id: str) -> bool:
-        """Remove item from user's wishlist"""
+        """Remove item from user's wishlist using external product ID"""
         try:
+            # Find the internal product UUID from the external ID
+            product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+            if not product_response.data:
+                logger.warning(f"Product not found for removal with external_id: {product_id}")
+                return False
+
+            internal_product_uuid = product_response.data[0]['id']
+
             response = (self.service_client.table("user_saved_items")
                        .delete()
                        .eq("user_id", user_id)
-                       .eq("product_id", product_id)
+                       .eq("product_id", internal_product_uuid) # Use the internal UUID
                        .execute())
             return True
         except Exception as e:
@@ -336,17 +345,42 @@ class DatabaseService:
             return False
     
     def is_item_in_wishlist(self, user_id: str, product_id: str) -> bool:
-        """Check if item is in user's wishlist"""
+        """Check if item is in user's wishlist using external product ID"""
         try:
+            # Find the internal product UUID from the external ID
+            product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+            if not product_response.data:
+                return False # Product doesn't exist
+
+            internal_product_uuid = product_response.data[0]['id']
+
             response = (self.service_client.table("user_saved_items")
                        .select("id")
                        .eq("user_id", user_id)
-                       .eq("product_id", product_id)
+                       .eq("product_id", internal_product_uuid)
                        .execute())
             return bool(response.data)
         except Exception as e:
             logger.error(f"Error checking wishlist: {e}")
             return False
+
+    def update_wishlist_item(self, wishlist_item_id: str, user_id: str, updates: Dict) -> Optional[Dict]:
+        """Update a wishlist item's notes or tags"""
+        try:
+            allowed_updates = {k: v for k, v in updates.items() if k in ['notes', 'tags']}
+            if not allowed_updates:
+                return None
+
+            response = (self.service_client.table("user_saved_items")
+                       .update(allowed_updates)
+                       .eq("id", wishlist_item_id)
+                       .eq("user_id", user_id)
+                       .execute())
+
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error updating wishlist item {wishlist_item_id}: {e}")
+            return None
     
     # Search History Management
     def add_to_search_history(self, user_id: str, session_id: str) -> bool:
