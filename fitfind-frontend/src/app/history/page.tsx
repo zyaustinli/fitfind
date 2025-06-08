@@ -5,6 +5,7 @@ import { History, AlertCircle, Sparkles, Clock, RefreshCw, CheckSquare, X, MoreH
 import { useAuth } from "@/contexts/AuthContext";
 import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useWishlist } from "@/hooks/useWishlist"; // Import the wishlist hook
 import { useToast } from "@/components/ui/toast";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export default function HistoryPage() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const historyContext = useHistoryContext();
+  const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
   const [deleteState, setDeleteState] = useState<DeleteState>({
     isOpen: false,
@@ -48,7 +50,6 @@ export default function HistoryPage() {
     itemCount: 0,
     loading: false
   });
-  const [savedProducts, setSavedProducts] = useState<Set<string>>(new Set());
   const [isRedoing, setIsRedoing] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkOperationMode, setBulkOperationMode] = useState(false);
@@ -294,8 +295,8 @@ export default function HistoryPage() {
     }
   }, [refresh, toast]);
 
-  // Product save/remove handlers (mock implementation)
-  const handleSaveProduct = useCallback((product: ClothingItem) => {
+  // Product save/remove handlers using wishlist hook
+  const handleSaveProduct = useCallback(async (product: ClothingItem) => {
     if (!user) {
       toast({
         type: "error",
@@ -304,20 +305,21 @@ export default function HistoryPage() {
       });
       return;
     }
-    setSavedProducts(prev => new Set([...prev, product.product_id || '']));
-  }, [user, toast]);
+    if (product.product_id) {
+      await addItem(product.product_id);
+    }
+  }, [user, toast, addItem]);
 
-  const handleRemoveProduct = useCallback((product: ClothingItem) => {
-    setSavedProducts(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(product.product_id || '');
-      return newSet;
-    });
-  }, []);
+  const handleRemoveProduct = useCallback(async (product: ClothingItem) => {
+    if (!user) return;
+    if (product.product_id) {
+      await removeItem(product.product_id);
+    }
+  }, [user, removeItem]);
 
   const isProductSaved = useCallback((product: ClothingItem) => {
-    return savedProducts.has(product.product_id || '');
-  }, [savedProducts]);
+    return product.product_id ? isInWishlist(product.product_id) : false;
+  }, [isInWishlist]);
 
   // Early return for loading state
   if (loading && !user) {

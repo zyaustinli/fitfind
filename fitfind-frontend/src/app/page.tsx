@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { uploadOutfitImage, redoSearch, ApiError } from "@/lib/api";
 import { transformBackendData } from "@/lib/data-transform";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWishlist } from "@/hooks/useWishlist"; // Import the hook
 import type { UploadedImage, ClothingItem, SearchSession } from "@/types";
 
 export default function Home() {
@@ -15,9 +16,9 @@ export default function Home() {
   const [searchSession, setSearchSession] = useState<SearchSession | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isRedoing, setIsRedoing] = useState(false);
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
 
   const { user } = useAuth();
+  const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
     setUploadedImage(image);
@@ -32,7 +33,6 @@ export default function Home() {
   const handleUploadNewOutfit = useCallback(() => {
     setUploadedImage(null);
     setSearchSession(null);
-    setSavedItems(new Set());
   }, []);
 
   const handleFindRecommendations = async () => {
@@ -92,25 +92,22 @@ export default function Home() {
     }
   };
 
-  const handleSaveItem = useCallback((item: ClothingItem) => {
+  const handleSaveItem = useCallback(async (item: ClothingItem) => {
     if (!user) {
-      alert('Please sign in to save items to your wishlist. Visit the Wishlist page to sign in.');
+      alert('Please sign in to save items to your wishlist.');
       return;
     }
-    setSavedItems(prev => new Set([...prev, item.product_id || item.title || '']));
-  }, [user]);
+    if (item.product_id) {
+      await addItem(item.product_id);
+    }
+  }, [user, addItem]);
 
-  const handleRemoveItem = useCallback((item: ClothingItem) => {
-    setSavedItems(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(item.product_id || item.title || '');
-      return newSet;
-    });
-  }, []);
-
-  const isItemSaved = useCallback((item: ClothingItem) => {
-    return savedItems.has(item.product_id || item.title || '');
-  }, [savedItems]);
+  const handleRemoveItem = useCallback(async (item: ClothingItem) => {
+    if (!user) return;
+    if (item.product_id) {
+      await removeItem(item.product_id);
+    }
+  }, [user, removeItem]);
 
   const handleRedoSearch = async () => {
     if (!searchSession?.conversationContext) return;
@@ -314,7 +311,7 @@ export default function Home() {
                 backendData={searchSession.backendData}
                 onSave={handleSaveItem}
                 onRemove={handleRemoveItem}
-                isItemSaved={isItemSaved}
+                isItemSaved={(item: ClothingItem) => item.product_id ? isInWishlist(item.product_id) : false}
               />
             )}
 
