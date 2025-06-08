@@ -525,6 +525,21 @@ def upload_file():
                 save_cleaned_json=True
             )
             
+            # <<<--- ADD THIS DEBUGGING BLOCK --- START --->>>
+            print("\n--- FITFIND SEARCH DEBUG ---")
+            if "error" in result:
+                print(f"[DEBUG] An error occurred during search: {result['error']}")
+            else:
+                print(f"[DEBUG] Search queries generated: {result.get('search_queries')}")
+                raw_results = result.get('raw_results_data', [])
+                print(f"[DEBUG] Number of raw result sets from SerpAPI: {len(raw_results)}")
+                if raw_results:
+                    shopping_results = raw_results[0].get('shopping_results', [])
+                    print(f"[DEBUG] Number of products in the first result set: {len(shopping_results)}")
+                cleaned_summary = result.get('cleaned_data', {}).get('summary', {})
+                print(f"[DEBUG] Cleaned data summary: {cleaned_summary}")
+            print("--- FITFIND SEARCH DEBUG ---\n")
+            
             # Clean up temporary file
             try:
                 os.remove(temp_file_path)
