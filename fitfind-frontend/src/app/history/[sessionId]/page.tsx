@@ -153,7 +153,7 @@ export default function SearchSessionDetailPage() {
         rating: product.rating || null,
         reviews: product.review_count || null,
         thumbnail: product.image_url,
-        product_id: product.external_id || product.id,
+        product_id: product.id, // Use the database ID
         shipping: product.delivery_info,
         tag: clothingItem.item_type,
       })) || []

@@ -215,7 +215,7 @@ class DatabaseService:
             if products_to_insert:
                 response = client.table("products").insert(products_to_insert).execute()
                 return bool(response.data)
-            return False
+                        return False
         except Exception as e:
             logger.error(f"Error saving products: {e}")
             return False
@@ -223,19 +223,22 @@ class DatabaseService:
     def get_session_with_items_and_products(self, session_id: str) -> Optional[Dict]:
         """Get complete search session with clothing items and products"""
         try:
+            # Use service_client to access all data regardless of RLS
+            client = self.service_client
+            
             # Get session
-            session_response = self.client.table("search_sessions").select("*").eq("id", session_id).execute()
+            session_response = client.table("search_sessions").select("*").eq("id", session_id).execute()
             if not session_response.data:
                 return None
-            
+
             session = session_response.data[0]
-            
-            # Get clothing items
-            items_response = (self.client.table("clothing_items")
-                            .select("*, products(*)")
-                            .eq("search_session_id", session_id)
-                            .execute())
-            
+
+            # Get clothing items with products
+            items_response = (client.table("clothing_items")
+                             .select("*, products(*)")
+                             .eq("search_session_id", session_id)
+                             .execute())
+
             session["clothing_items"] = items_response.data or []
             return session
         except Exception as e:
@@ -250,11 +253,24 @@ class DatabaseService:
     def remove_from_wishlist(self, user_id: str, product_id: str) -> bool:
         """Remove item from user's wishlist"""
         try:
+            # First try to remove by product_id directly
             response = (self.service_client.table("user_saved_items")
                        .delete()
                        .eq("user_id", user_id)
                        .eq("product_id", product_id)
                        .execute())
+            
+            # If no rows were affected, try to find the product by external_id and then remove
+            if not response.data:
+                product_response = self.service_client.table("products").select("id").eq("external_id", product_id).execute()
+                if product_response.data:
+                    actual_product_id = product_response.data[0]["id"]
+                    response = (self.service_client.table("user_saved_items")
+                               .delete()
+                               .eq("user_id", user_id)
+                               .eq("product_id", actual_product_id)
+                               .execute())
+            
             return True
         except Exception as e:
             logger.error(f"Error removing from wishlist: {e}")
@@ -307,12 +323,28 @@ class DatabaseService:
     def is_item_in_wishlist(self, user_id: str, product_id: str) -> bool:
         """Check if item is in user's wishlist"""
         try:
+            # First try to find by product_id directly
             response = (self.service_client.table("user_saved_items")
                        .select("id")
                        .eq("user_id", user_id)
                        .eq("product_id", product_id)
                        .execute())
-            return bool(response.data)
+            
+            if response.data:
+                return True
+            
+            # If not found directly, try to find the product by external_id and then check wishlist
+            product_response = self.service_client.table("products").select("id").eq("external_id", product_id).execute()
+            if product_response.data:
+                actual_product_id = product_response.data[0]["id"]
+                response = (self.service_client.table("user_saved_items")
+                           .select("id")
+                           .eq("user_id", user_id)
+                           .eq("product_id", actual_product_id)
+                           .execute())
+                return bool(response.data)
+            
+            return False
         except Exception as e:
             logger.error(f"Error checking wishlist: {e}")
             return False
@@ -322,21 +354,31 @@ class DatabaseService:
                                        notes: str = None, tags: List[str] = None) -> Optional[Dict]:
         """Add item to user's wishlist with optional collection assignment"""
         try:
-            # First, validate that the product exists
+            # First, try to find the product by ID
             product_response = self.service_client.table("products").select("id, title, source").eq("id", product_id).execute()
+            
+            # If not found by ID, try by external_id
             if not product_response.data:
-                logger.error(f"Product not found: {product_id}")
+                logger.info(f"Product not found by ID {product_id}, trying external_id")
+                product_response = self.service_client.table("products").select("id, title, source").eq("external_id", product_id).execute()
+            
+            if not product_response.data:
+                logger.error(f"Product not found by ID or external_id: {product_id}")
                 return None
             
-            # Check if item is already in wishlist
+            # Use the actual database ID
+            actual_product_id = product_response.data[0]["id"]
+            logger.info(f"Found product: search_id={product_id}, actual_id={actual_product_id}")
+            
+            # Check if item is already in wishlist using the actual product ID
             existing_response = (self.service_client.table("user_saved_items")
                                .select("id")
                                .eq("user_id", user_id)
-                               .eq("product_id", product_id)
+                               .eq("product_id", actual_product_id)
                                .execute())
             
             if existing_response.data:
-                logger.warning(f"Product {product_id} already in wishlist for user {user_id}")
+                logger.warning(f"Product {actual_product_id} already in wishlist for user {user_id}")
                 return None
             
             # If no collection specified, get the user's default collection
@@ -347,7 +389,7 @@ class DatabaseService:
             
             wishlist_data = {
                 "user_id": user_id,
-                "product_id": product_id,
+                "product_id": actual_product_id,  # Use the database ID
                 "notes": notes,
                 "tags": tags or [],
                 "collection_id": collection_id

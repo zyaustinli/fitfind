@@ -1130,11 +1130,49 @@ def get_results(file_id):
                 # Get complete session with items and products
                 complete_session = db_service.get_session_with_items_and_products(session['id'])
                 if complete_session:
-                    # Transform database format to frontend format
+                    # Transform database format to consistent backend format
+                    clothing_items = []
+                    for clothing_item in complete_session.get('clothing_items', []):
+                        products = []
+                        for product in clothing_item.get('products', []):
+                            # Transform database product to backend format
+                            backend_product = {
+                                'id': product['id'],  # Use database ID as the main ID
+                                'title': product['title'],
+                                'price': str(product['price']) if product['price'] is not None else None,
+                                'price_numeric': product['price'],
+                                'old_price': str(product['old_price']) if product['old_price'] is not None else None,
+                                'old_price_numeric': product['old_price'],
+                                'discount_percentage': str(product['discount_percentage']) if product['discount_percentage'] is not None else None,
+                                'image_url': product['image_url'],
+                                'product_url': product['product_url'],
+                                'source': product['source'],
+                                'source_icon': product['source_icon'],
+                                'rating': product['rating'],
+                                'review_count': product['review_count'],
+                                'delivery_info': product['delivery_info'],
+                                'tags': product['tags'] or []
+                            }
+                            products.append(backend_product)
+                        
+                        backend_clothing_item = {
+                            'query': clothing_item['query'],
+                            'item_type': clothing_item['item_type'],
+                            'total_products': clothing_item['total_products'],
+                            'price_range': {
+                                'min': clothing_item['price_range_min'],
+                                'max': clothing_item['price_range_max'],
+                                'average': clothing_item['price_range_average']
+                            } if clothing_item['price_range_min'] is not None and clothing_item['price_range_max'] is not None else None,
+                            'products': products
+                        }
+                        clothing_items.append(backend_clothing_item)
+                    
+                    # Create consistent backend format
                     cleaned_data = {
-                        'clothing_items': complete_session.get('clothing_items', []),
+                        'clothing_items': clothing_items,
                         'summary': {
-                            'total_items': len(complete_session.get('clothing_items', [])),
+                            'total_items': len(clothing_items),
                             'total_products': complete_session.get('num_products_found', 0),
                             'has_errors': False,
                             'error_items': []
