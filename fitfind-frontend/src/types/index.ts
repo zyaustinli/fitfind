@@ -289,7 +289,7 @@ export interface ErrorState {
 
 // Bulk Operations Types
 export interface BulkOperation {
-  type: 'delete' | 'export' | 'tag' | 'move';
+  type: 'delete' | 'export' | 'tag' | 'move' | 'add_to_collection' | 'remove_from_collection';
   selectedIds: string[];
   data?: any;
 }
@@ -325,4 +325,226 @@ export interface WishlistStats {
     category: string;
     count: number;
   }>;
+}
+
+// Collection Types
+export interface Collection {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  cover_image_url?: string | null;
+  is_private: boolean;
+  created_at: string;
+  updated_at: string;
+  // Statistics (added by backend when include_stats=true)
+  item_count?: number;
+  last_updated?: string | null;
+}
+
+export interface CollectionItem {
+  id: string;
+  collection_id: string;
+  saved_item_id: string;
+  added_at: string;
+  position: number;
+  // Nested relationships from backend
+  user_saved_items?: WishlistItemDetailed;
+}
+
+export interface CollectionDetails extends Collection {
+  // Always includes statistics for detail views
+  item_count: number;
+  last_updated: string | null;
+}
+
+// Collection API Response Types
+export interface CollectionsResponse {
+  success: boolean;
+  collections: Collection[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+export interface CollectionResponse {
+  success: boolean;
+  collection?: Collection;
+  error?: string;
+}
+
+export interface CollectionDetailsResponse {
+  success: boolean;
+  collection?: CollectionDetails;
+  error?: string;
+}
+
+export interface CollectionItemsResponse {
+  success: boolean;
+  items: CollectionItem[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+export interface CollectionCreateRequest {
+  name: string;
+  description?: string;
+  cover_image_url?: string;
+  is_private?: boolean;
+}
+
+export interface CollectionUpdateRequest {
+  name?: string;
+  description?: string;
+  cover_image_url?: string;
+  is_private?: boolean;
+}
+
+export interface CollectionItemPosition {
+  saved_item_id: string;
+  position: number;
+}
+
+export interface CollectionReorderRequest {
+  item_positions: CollectionItemPosition[];
+}
+
+// Enhanced Wishlist Types with Collection Support
+export interface WishlistItemDetailedWithCollection extends WishlistItemDetailed {
+  collection_id?: string | null;
+  user_collections?: Collection | null;
+}
+
+export interface WishlistResponseWithCollections {
+  success: boolean;
+  wishlist: WishlistItemDetailedWithCollection[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+export interface WishlistAddRequestWithCollection {
+  product_id: string;
+  notes?: string;
+  tags?: string[];
+  collection_id?: string;
+}
+
+export interface WishlistBulkAddRequest {
+  product_ids: string[];
+  collection_id?: string;
+  notes?: string;
+  tags?: string[];
+}
+
+export interface WishlistBulkAddResponse {
+  success: boolean;
+  results: {
+    successful: Array<{
+      product_id: string;
+      wishlist_item: WishlistItemDetailedWithCollection;
+    }>;
+    failed: string[];
+    already_exists: string[];
+  };
+  message?: string;
+  error?: string;
+}
+
+export interface WishlistMoveRequest {
+  saved_item_id: string;
+  from_collection_id?: string;
+  to_collection_id?: string;
+}
+
+export interface WishlistMoveResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+// Collection Filters and Sorting
+export interface CollectionFilters {
+  searchQuery?: string; // Search within collection names and descriptions
+  isPrivate?: boolean;
+  sortBy: 'newest' | 'oldest' | 'name' | 'item_count' | 'last_updated';
+  viewMode: 'grid' | 'list';
+}
+
+export interface CollectionItemFilters {
+  searchQuery?: string; // Search within item titles
+  priceRange?: {
+    min: number;
+    max: number;
+  };
+  sources?: string[];
+  tags?: string[];
+  sortBy: 'position' | 'newest' | 'oldest' | 'price_low' | 'price_high' | 'title';
+}
+
+// Collection Statistics
+export interface CollectionStats {
+  totalCollections: number;
+  totalItems: number;
+  averageItemsPerCollection: number;
+  topCollections: Array<{
+    id: string;
+    name: string;
+    item_count: number;
+  }>;
+  recentActivity: Array<{
+    collection_id: string;
+    collection_name: string;
+    action: 'created' | 'item_added' | 'item_removed';
+    timestamp: string;
+  }>;
+}
+
+// Save Item Hook Types
+export interface SaveItemState {
+  isSaving: boolean;
+  isSaved: boolean;
+  error?: string;
+}
+
+export interface SaveItemOptions {
+  collection_id?: string;
+  notes?: string;
+  tags?: string[];
+  showCollectionSelector?: boolean;
+}
+
+// Collection Management Hook Types
+export interface CollectionFiltersState extends CollectionFilters {
+  // Additional UI state
+  showCreateModal: boolean;
+  showEditModal: boolean;
+  selectedCollection?: Collection;
+}
+
+export interface CollectionOperationsState {
+  isCreating: boolean;
+  isUpdating: boolean;
+  isDeleting: boolean;
+  isReordering: boolean;
+  isAddingItem: boolean;
+  isRemovingItem: boolean;
+}
+
+// Bulk Operations Extended for Collections
+export interface CollectionBulkOperation extends BulkOperation {
+  type: 'delete' | 'export' | 'tag' | 'move' | 'add_to_collection' | 'remove_from_collection';
+  data?: {
+    tags?: string[];
+    collection_id?: string;
+    target_collection_id?: string;
+  };
+}
+
+// Enhanced Bulk Operations for Wishlist
+export interface WishlistBulkOperation extends BulkOperation {
+  type: 'delete' | 'export' | 'tag' | 'move' | 'add_to_collection';
+  data?: {
+    tags?: string[];
+    collection_id?: string;
+    notes?: string;
+  };
 } 

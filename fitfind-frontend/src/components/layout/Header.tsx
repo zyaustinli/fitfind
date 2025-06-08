@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Sparkles, Menu, X, Heart, History, LogOut, Settings, Search } from 'lucide-react'
+import { Sparkles, Menu, X, Heart, History, LogOut, Settings, Search, FolderHeart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AuthModal } from '@/components/auth/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
@@ -80,6 +80,13 @@ export function Header({ className }: HeaderProps) {
                 <span>History</span>
               </Link>
               <Link 
+                href="/collections" 
+                className="flex items-center space-x-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <FolderHeart className="h-4 w-4" />
+                <span>Collections</span>
+              </Link>
+              <Link 
                 href="/wishlist" 
                 className="flex items-center space-x-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
@@ -127,6 +134,15 @@ export function Header({ className }: HeaderProps) {
                       >
                         <History className="h-4 w-4" />
                         <span>History</span>
+                      </Link>
+                      
+                      <Link 
+                        href="/collections" 
+                        className="flex items-center space-x-2 px-3 py-2 text-sm hover:bg-muted transition-colors md:hidden"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        <FolderHeart className="h-4 w-4" />
+                        <span>Collections</span>
                       </Link>
                       
                       <Link 
@@ -194,6 +210,14 @@ export function Header({ className }: HeaderProps) {
                 >
                   <History className="h-4 w-4" />
                   <span>History</span>
+                </Link>
+                <Link 
+                  href="/collections"
+                  className="flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-lg hover:bg-muted transition-colors"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <FolderHeart className="h-4 w-4" />
+                  <span>Collections</span>
                 </Link>
                 <Link 
                   href="/wishlist"

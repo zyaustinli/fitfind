@@ -243,46 +243,9 @@ class DatabaseService:
             return None
     
     # Saved Items (Wishlist) Management
-    def add_to_wishlist(self, user_id: str, product_id: str, notes: str = None, tags: List[str] = None) -> Optional[Dict]:
-        """Add item to user's wishlist"""
-        try:
-            # First, validate that the product exists
-            product_response = self.service_client.table("products").select("id, title, source").eq("id", product_id).execute()
-            if not product_response.data:
-                logger.error(f"Product not found: {product_id}")
-                return None
-            
-            # Check if item is already in wishlist
-            existing_response = (self.service_client.table("user_saved_items")
-                               .select("id")
-                               .eq("user_id", user_id)
-                               .eq("product_id", product_id)
-                               .execute())
-            
-            if existing_response.data:
-                logger.warning(f"Product {product_id} already in wishlist for user {user_id}")
-                return None  # Could also raise a specific exception here
-            
-            wishlist_data = {
-                "user_id": user_id,
-                "product_id": product_id,
-                "notes": notes,
-                "tags": tags or []
-            }
-            
-            # Insert the wishlist item and return with product details
-            response = self.service_client.table("user_saved_items").insert(wishlist_data).execute()
-            
-            if response.data:
-                wishlist_item = response.data[0]
-                # Include product details in the response
-                wishlist_item["products"] = product_response.data[0]
-                return wishlist_item
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error adding to wishlist: {e}")
-            return None
+    def add_to_wishlist(self, user_id: str, product_id: str, notes: str = None, tags: List[str] = None, collection_id: str = None) -> Optional[Dict]:
+        """Add item to user's wishlist - updated to support collections"""
+        return self.add_to_wishlist_with_collection(user_id, product_id, collection_id, notes, tags)
     
     def remove_from_wishlist(self, user_id: str, product_id: str) -> bool:
         """Remove item from user's wishlist"""
@@ -297,18 +260,24 @@ class DatabaseService:
             logger.error(f"Error removing from wishlist: {e}")
             return False
     
-    def get_user_wishlist(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
-        """Get user's wishlist with product details"""
+    def get_user_wishlist(self, user_id: str, limit: int = 50, offset: int = 0, collection_id: str = None) -> List[Dict]:
+        """Get user's wishlist with product details and collection information"""
         try:
             # Enforce reasonable limits
             limit = min(limit, 100)  # Maximum 100 items per request
             
-            response = (self.service_client.table("user_saved_items")
-                       .select("*, products(*)")
-                       .eq("user_id", user_id)
-                       .order("created_at", desc=True)
-                       .range(offset, offset + limit - 1)
-                       .execute())
+            query = (self.service_client.table("user_saved_items")
+                    .select("*, products(*), user_collections(*)")
+                    .eq("user_id", user_id))
+            
+            # Filter by collection if specified
+            if collection_id:
+                query = query.eq("collection_id", collection_id)
+            
+            response = (query.order("created_at", desc=True)
+                           .range(offset, offset + limit - 1)
+                           .execute())
+            
             return response.data or []
         except Exception as e:
             logger.error(f"Error getting user wishlist: {e}")
@@ -347,7 +316,453 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error checking wishlist: {e}")
             return False
-    
+
+    # Enhanced Wishlist Methods with Collection Support
+    def add_to_wishlist_with_collection(self, user_id: str, product_id: str, collection_id: str = None, 
+                                       notes: str = None, tags: List[str] = None) -> Optional[Dict]:
+        """Add item to user's wishlist with optional collection assignment"""
+        try:
+            # First, validate that the product exists
+            product_response = self.service_client.table("products").select("id, title, source").eq("id", product_id).execute()
+            if not product_response.data:
+                logger.error(f"Product not found: {product_id}")
+                return None
+            
+            # Check if item is already in wishlist
+            existing_response = (self.service_client.table("user_saved_items")
+                               .select("id")
+                               .eq("user_id", user_id)
+                               .eq("product_id", product_id)
+                               .execute())
+            
+            if existing_response.data:
+                logger.warning(f"Product {product_id} already in wishlist for user {user_id}")
+                return None
+            
+            # If no collection specified, get the user's default collection
+            if not collection_id:
+                default_collection = self.get_user_default_collection(user_id)
+                if default_collection:
+                    collection_id = default_collection["id"]
+            
+            wishlist_data = {
+                "user_id": user_id,
+                "product_id": product_id,
+                "notes": notes,
+                "tags": tags or [],
+                "collection_id": collection_id
+            }
+            
+            # Insert the wishlist item
+            response = self.service_client.table("user_saved_items").insert(wishlist_data).execute()
+            
+            if response.data:
+                wishlist_item = response.data[0]
+                # Include product details in the response
+                wishlist_item["products"] = product_response.data[0]
+                
+                # If assigned to a collection, also add to collection_items table
+                if collection_id:
+                    self.add_item_to_collection(collection_id, wishlist_item["id"])
+                
+                return wishlist_item
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error adding to wishlist with collection: {e}")
+            return None
+
+    def bulk_add_to_wishlist(self, user_id: str, product_ids: List[str], collection_id: str = None, 
+                           notes: str = None, tags: List[str] = None) -> Dict[str, Any]:
+        """Bulk add multiple items to wishlist"""
+        try:
+            results = {
+                "successful": [],
+                "failed": [],
+                "already_exists": []
+            }
+            
+            for product_id in product_ids:
+                # Check if already in wishlist
+                if self.is_item_in_wishlist(user_id, product_id):
+                    results["already_exists"].append(product_id)
+                    continue
+                
+                # Try to add item
+                wishlist_item = self.add_to_wishlist_with_collection(
+                    user_id, product_id, collection_id, notes, tags
+                )
+                
+                if wishlist_item:
+                    results["successful"].append({
+                        "product_id": product_id,
+                        "wishlist_item": wishlist_item
+                    })
+                else:
+                    results["failed"].append(product_id)
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error bulk adding to wishlist: {e}")
+            return {"successful": [], "failed": product_ids, "already_exists": []}
+
+    def move_item_between_collections(self, user_id: str, saved_item_id: str, 
+                                    from_collection_id: str = None, to_collection_id: str = None) -> bool:
+        """Move a saved item between collections"""
+        try:
+            # Verify the saved item belongs to the user
+            saved_item_response = (self.service_client.table("user_saved_items")
+                                 .select("id, collection_id")
+                                 .eq("id", saved_item_id)
+                                 .eq("user_id", user_id)
+                                 .execute())
+            
+            if not saved_item_response.data:
+                logger.error(f"Saved item {saved_item_id} not found for user {user_id}")
+                return False
+            
+            current_collection_id = saved_item_response.data[0].get("collection_id")
+            
+            # Remove from current collection if it exists
+            if current_collection_id:
+                self.remove_item_from_collection(current_collection_id, saved_item_id)
+            
+            # Update the saved item's collection reference
+            update_data = {"collection_id": to_collection_id}
+            update_response = (self.service_client.table("user_saved_items")
+                             .update(update_data)
+                             .eq("id", saved_item_id)
+                             .eq("user_id", user_id)
+                             .execute())
+            
+            # Add to new collection if specified
+            if to_collection_id:
+                self.add_item_to_collection(to_collection_id, saved_item_id)
+            
+            return bool(update_response.data)
+        except Exception as e:
+            logger.error(f"Error moving item between collections: {e}")
+            return False
+
+    # Collection Management Methods
+    def create_user_collection(self, user_id: str, name: str, description: str = None, 
+                             cover_image_url: str = None, is_private: bool = False) -> Optional[Dict]:
+        """Create a new collection for a user"""
+        try:
+            collection_data = {
+                "user_id": user_id,
+                "name": name,
+                "description": description,
+                "cover_image_url": cover_image_url,
+                "is_private": is_private
+            }
+            
+            response = self.service_client.table("user_collections").insert(collection_data).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error creating user collection: {e}")
+            return None
+
+    def get_user_collections(self, user_id: str, limit: int = 50, offset: int = 0, 
+                           include_stats: bool = True) -> List[Dict]:
+        """Get user's collections with optional statistics"""
+        try:
+            # Enforce reasonable limits
+            limit = min(limit, 100)
+            
+            response = (self.service_client.table("user_collections")
+                       .select("*")
+                       .eq("user_id", user_id)
+                       .order("created_at", desc=True)
+                       .range(offset, offset + limit - 1)
+                       .execute())
+            
+            collections = response.data or []
+            
+            # Add statistics if requested
+            if include_stats and collections:
+                for collection in collections:
+                    stats = self.get_collection_statistics(collection["id"])
+                    collection.update(stats)
+            
+            return collections
+        except Exception as e:
+            logger.error(f"Error getting user collections: {e}")
+            return []
+
+    def get_user_default_collection(self, user_id: str) -> Optional[Dict]:
+        """Get user's default collection (first created collection named 'My Favorites')"""
+        try:
+            response = (self.service_client.table("user_collections")
+                       .select("*")
+                       .eq("user_id", user_id)
+                       .eq("name", "My Favorites")
+                       .order("created_at", desc=False)
+                       .limit(1)
+                       .execute())
+            
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting user default collection: {e}")
+            return None
+
+    def update_user_collection(self, collection_id: str, user_id: str, updates: Dict) -> Optional[Dict]:
+        """Update a user's collection"""
+        try:
+            # Only allow updating certain fields
+            allowed_fields = ['name', 'description', 'cover_image_url', 'is_private']
+            safe_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+            
+            if not safe_updates:
+                logger.warning("No valid fields to update in collection")
+                return None
+            
+            response = (self.service_client.table("user_collections")
+                       .update(safe_updates)
+                       .eq("id", collection_id)
+                       .eq("user_id", user_id)
+                       .execute())
+            
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error updating user collection: {e}")
+            return None
+
+    def delete_user_collection(self, collection_id: str, user_id: str) -> bool:
+        """Delete a user's collection and handle associated items"""
+        try:
+            # First, check if this is the default collection
+            collection_response = (self.service_client.table("user_collections")
+                                 .select("name")
+                                 .eq("id", collection_id)
+                                 .eq("user_id", user_id)
+                                 .execute())
+            
+            if not collection_response.data:
+                logger.error(f"Collection {collection_id} not found for user {user_id}")
+                return False
+            
+            # Prevent deletion of default collection
+            if collection_response.data[0]["name"] == "My Favorites":
+                logger.error("Cannot delete default 'My Favorites' collection")
+                return False
+            
+            # Get alternative collection (default collection) for saved items
+            default_collection = self.get_user_default_collection(user_id)
+            default_collection_id = default_collection["id"] if default_collection else None
+            
+            # Move all saved items to default collection or set to null
+            saved_items_response = (self.service_client.table("user_saved_items")
+                                  .select("id")
+                                  .eq("collection_id", collection_id)
+                                  .execute())
+            
+            if saved_items_response.data:
+                for item in saved_items_response.data:
+                    # Update saved item's collection reference
+                    self.service_client.table("user_saved_items").update({
+                        "collection_id": default_collection_id
+                    }).eq("id", item["id"]).execute()
+                    
+                    # Add to default collection if it exists
+                    if default_collection_id:
+                        self.add_item_to_collection(default_collection_id, item["id"])
+            
+            # Delete the collection (cascade will handle collection_items)
+            delete_response = (self.service_client.table("user_collections")
+                             .delete()
+                             .eq("id", collection_id)
+                             .eq("user_id", user_id)
+                             .execute())
+            
+            return bool(delete_response.data)
+        except Exception as e:
+            logger.error(f"Error deleting user collection: {e}")
+            return False
+
+    def get_collection_details(self, collection_id: str, user_id: str) -> Optional[Dict]:
+        """Get detailed information about a collection"""
+        try:
+            # Get collection basic info
+            collection_response = (self.service_client.table("user_collections")
+                                 .select("*")
+                                 .eq("id", collection_id)
+                                 .eq("user_id", user_id)
+                                 .execute())
+            
+            if not collection_response.data:
+                return None
+            
+            collection = collection_response.data[0]
+            
+            # Add statistics
+            stats = self.get_collection_statistics(collection_id)
+            collection.update(stats)
+            
+            return collection
+        except Exception as e:
+            logger.error(f"Error getting collection details: {e}")
+            return None
+
+    def get_collection_items(self, collection_id: str, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
+        """Get items in a collection with full product details"""
+        try:
+            # First verify the collection belongs to the user
+            collection_check = (self.service_client.table("user_collections")
+                              .select("id")
+                              .eq("id", collection_id)
+                              .eq("user_id", user_id)
+                              .execute())
+            
+            if not collection_check.data:
+                logger.error(f"Collection {collection_id} not found for user {user_id}")
+                return []
+            
+            # Enforce reasonable limits
+            limit = min(limit, 100)
+            
+            # Get collection items with saved item and product details
+            response = (self.service_client.table("collection_items")
+                       .select("""
+                           *,
+                           user_saved_items(
+                               *,
+                               products(*)
+                           )
+                       """)
+                       .eq("collection_id", collection_id)
+                       .order("position", desc=False)
+                       .order("added_at", desc=True)
+                       .range(offset, offset + limit - 1)
+                       .execute())
+            
+            return response.data or []
+        except Exception as e:
+            logger.error(f"Error getting collection items: {e}")
+            return []
+
+    def add_item_to_collection(self, collection_id: str, saved_item_id: str, position: int = None) -> bool:
+        """Add a saved item to a collection"""
+        try:
+            # Check if item is already in collection
+            existing_response = (self.service_client.table("collection_items")
+                               .select("id")
+                               .eq("collection_id", collection_id)
+                               .eq("saved_item_id", saved_item_id)
+                               .execute())
+            
+            if existing_response.data:
+                logger.warning(f"Item {saved_item_id} already in collection {collection_id}")
+                return True  # Already exists, consider it successful
+            
+            # If no position specified, add to end
+            if position is None:
+                position = self.get_next_collection_position(collection_id)
+            
+            collection_item_data = {
+                "collection_id": collection_id,
+                "saved_item_id": saved_item_id,
+                "position": position
+            }
+            
+            response = self.service_client.table("collection_items").insert(collection_item_data).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error adding item to collection: {e}")
+            return False
+
+    def remove_item_from_collection(self, collection_id: str, saved_item_id: str) -> bool:
+        """Remove a saved item from a collection"""
+        try:
+            response = (self.service_client.table("collection_items")
+                       .delete()
+                       .eq("collection_id", collection_id)
+                       .eq("saved_item_id", saved_item_id)
+                       .execute())
+            return True  # Supabase doesn't return data on delete, assume success if no exception
+        except Exception as e:
+            logger.error(f"Error removing item from collection: {e}")
+            return False
+
+    def reorder_collection_items(self, collection_id: str, user_id: str, item_positions: List[Dict]) -> bool:
+        """Reorder items in a collection. item_positions should be [{"saved_item_id": "...", "position": 1}, ...]"""
+        try:
+            # Verify collection belongs to user
+            collection_check = (self.service_client.table("user_collections")
+                              .select("id")
+                              .eq("id", collection_id)
+                              .eq("user_id", user_id)
+                              .execute())
+            
+            if not collection_check.data:
+                logger.error(f"Collection {collection_id} not found for user {user_id}")
+                return False
+            
+            # Update positions
+            for item_position in item_positions:
+                saved_item_id = item_position.get("saved_item_id")
+                position = item_position.get("position")
+                
+                if saved_item_id and position is not None:
+                    self.service_client.table("collection_items").update({
+                        "position": position
+                    }).eq("collection_id", collection_id).eq("saved_item_id", saved_item_id).execute()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error reordering collection items: {e}")
+            return False
+
+    def get_collection_statistics(self, collection_id: str) -> Dict[str, Any]:
+        """Get statistics for a collection"""
+        try:
+            # Get item count
+            count_response = (self.service_client.table("collection_items")
+                            .select("id", count="exact")
+                            .eq("collection_id", collection_id)
+                            .execute())
+            
+            item_count = count_response.count or 0
+            
+            # Get last updated timestamp
+            last_updated = None
+            if item_count > 0:
+                latest_response = (self.service_client.table("collection_items")
+                                 .select("added_at")
+                                 .eq("collection_id", collection_id)
+                                 .order("added_at", desc=True)
+                                 .limit(1)
+                                 .execute())
+                
+                if latest_response.data:
+                    last_updated = latest_response.data[0]["added_at"]
+            
+            return {
+                "item_count": item_count,
+                "last_updated": last_updated
+            }
+        except Exception as e:
+            logger.error(f"Error getting collection statistics: {e}")
+            return {"item_count": 0, "last_updated": None}
+
+    def get_next_collection_position(self, collection_id: str) -> int:
+        """Get the next position for adding an item to a collection"""
+        try:
+            response = (self.service_client.table("collection_items")
+                       .select("position")
+                       .eq("collection_id", collection_id)
+                       .order("position", desc=True)
+                       .limit(1)
+                       .execute())
+            
+            if response.data:
+                return response.data[0]["position"] + 1
+            else:
+                return 0  # First item
+        except Exception as e:
+            logger.error(f"Error getting next collection position: {e}")
+            return 0
+
     # Search History Management
     def add_to_search_history(self, user_id: str, session_id: str) -> bool:
         """Add search session to user's history"""

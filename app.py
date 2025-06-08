@@ -228,8 +228,9 @@ def get_wishlist():
         user_id = get_current_user_id()
         limit = int(request.args.get('limit', 50))
         offset = int(request.args.get('offset', 0))
+        collection_id = request.args.get('collection_id')  # Optional collection filter
         
-        wishlist = db_service.get_user_wishlist(user_id, limit, offset)
+        wishlist = db_service.get_user_wishlist(user_id, limit, offset, collection_id)
         total_count = db_service.get_wishlist_count(user_id)
         
         return jsonify({
@@ -266,6 +267,7 @@ def add_to_wishlist():
         product_id = data['product_id']
         notes = data.get('notes')
         tags = data.get('tags', [])
+        collection_id = data.get('collection_id')  # Optional collection assignment
         
         # Check wishlist limit (optional, adjust as needed)
         if not db_service.check_wishlist_limit(user_id, max_items=1000):
@@ -275,7 +277,7 @@ def add_to_wishlist():
             }), 400
         
         # Add to wishlist
-        wishlist_item = db_service.add_to_wishlist(user_id, product_id, notes, tags)
+        wishlist_item = db_service.add_to_wishlist(user_id, product_id, notes, tags, collection_id)
         
         if wishlist_item:
             return jsonify({
@@ -377,6 +379,425 @@ def check_wishlist_status():
         return jsonify({
             'success': False,
             'error': f'Error checking wishlist status: {str(e)}'
+        }), 500
+
+# Enhanced Wishlist Endpoints with Collection Support
+
+@app.route('/api/wishlist/batch', methods=['POST'])
+@require_auth
+def bulk_add_to_wishlist():
+    """Bulk add items to user's wishlist"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'product_ids' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'product_ids array is required'
+            }), 400
+        
+        product_ids = data['product_ids']
+        collection_id = data.get('collection_id')
+        notes = data.get('notes')
+        tags = data.get('tags', [])
+        
+        # Check wishlist limit (optional, adjust as needed)
+        if not db_service.check_wishlist_limit(user_id, max_items=1000):
+            return jsonify({
+                'success': False,
+                'error': 'Wishlist limit reached (1000 items maximum)'
+            }), 400
+        
+        # Bulk add to wishlist
+        results = db_service.bulk_add_to_wishlist(user_id, product_ids, collection_id, notes, tags)
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'message': f'Added {len(results["successful"])} items to wishlist'
+        })
+    except Exception as e:
+        print(f"Error bulk adding to wishlist: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error bulk adding to wishlist: {str(e)}'
+        }), 500
+
+@app.route('/api/wishlist/move', methods=['POST'])
+@require_auth
+def move_wishlist_item():
+    """Move a wishlist item between collections"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'saved_item_id' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'saved_item_id is required'
+            }), 400
+        
+        saved_item_id = data['saved_item_id']
+        from_collection_id = data.get('from_collection_id')
+        to_collection_id = data.get('to_collection_id')
+        
+        success = db_service.move_item_between_collections(
+            user_id, saved_item_id, from_collection_id, to_collection_id
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item moved successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to move item'
+            }), 400
+    except Exception as e:
+        print(f"Error moving wishlist item: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error moving wishlist item: {str(e)}'
+        }), 500
+
+# Collection Management Endpoints
+
+@app.route('/api/collections', methods=['GET'])
+@require_auth
+def get_collections():
+    """Get user's collections"""
+    try:
+        user_id = get_current_user_id()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        include_stats = request.args.get('include_stats', 'true').lower() == 'true'
+        
+        collections = db_service.get_user_collections(user_id, limit, offset, include_stats)
+        
+        # Get total count for pagination
+        total_count_response = db_service.service_client.table("user_collections").select("id", count="exact").eq("user_id", user_id).execute()
+        total_count = total_count_response.count or 0
+        
+        return jsonify({
+            'success': True,
+            'collections': collections,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'has_more': len(collections) == limit,
+                'total_count': total_count
+            }
+        })
+    except Exception as e:
+        print(f"Error getting collections: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting collections: {str(e)}'
+        }), 500
+
+@app.route('/api/collections', methods=['POST'])
+@require_auth
+def create_collection():
+    """Create a new collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'name' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Collection name is required'
+            }), 400
+        
+        name = data['name'].strip()
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': 'Collection name cannot be empty'
+            }), 400
+        
+        description = data.get('description', '').strip() or None
+        cover_image_url = data.get('cover_image_url', '').strip() or None
+        is_private = data.get('is_private', False)
+        
+        collection = db_service.create_user_collection(
+            user_id, name, description, cover_image_url, is_private
+        )
+        
+        if collection:
+            return jsonify({
+                'success': True,
+                'collection': collection,
+                'message': 'Collection created successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create collection'
+            }), 400
+    except Exception as e:
+        print(f"Error creating collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error creating collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['GET'])
+@require_auth
+def get_collection_details(collection_id):
+    """Get detailed information about a collection"""
+    try:
+        user_id = get_current_user_id()
+        
+        collection = db_service.get_collection_details(collection_id, user_id)
+        
+        if collection:
+            return jsonify({
+                'success': True,
+                'collection': collection
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+    except Exception as e:
+        print(f"Error getting collection details: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting collection details: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['PUT'])
+@require_auth
+def update_collection(collection_id):
+    """Update a collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Validate name if provided
+        if 'name' in data:
+            name = data['name'].strip()
+            if not name:
+                return jsonify({
+                    'success': False,
+                    'error': 'Collection name cannot be empty'
+                }), 400
+            data['name'] = name
+        
+        # Clean up optional fields
+        if 'description' in data:
+            data['description'] = data['description'].strip() or None
+        if 'cover_image_url' in data:
+            data['cover_image_url'] = data['cover_image_url'].strip() or None
+        
+        collection = db_service.update_user_collection(collection_id, user_id, data)
+        
+        if collection:
+            return jsonify({
+                'success': True,
+                'collection': collection,
+                'message': 'Collection updated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found or update failed'
+            }), 404
+    except Exception as e:
+        print(f"Error updating collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error updating collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['DELETE'])
+@require_auth
+def delete_collection(collection_id):
+    """Delete a collection"""
+    try:
+        user_id = get_current_user_id()
+        
+        success = db_service.delete_user_collection(collection_id, user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Collection deleted successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found or cannot be deleted'
+            }), 404
+    except Exception as e:
+        print(f"Error deleting collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error deleting collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/items', methods=['GET'])
+@require_auth
+def get_collection_items(collection_id):
+    """Get items in a collection"""
+    try:
+        user_id = get_current_user_id()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        items = db_service.get_collection_items(collection_id, user_id, limit, offset)
+        
+        # Get total count for pagination
+        count_response = db_service.service_client.table("collection_items").select("id", count="exact").eq("collection_id", collection_id).execute()
+        total_count = count_response.count or 0
+        
+        return jsonify({
+            'success': True,
+            'items': items,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'has_more': len(items) == limit,
+                'total_count': total_count
+            }
+        })
+    except Exception as e:
+        print(f"Error getting collection items: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting collection items: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/items', methods=['POST'])
+@require_auth
+def add_item_to_collection(collection_id):
+    """Add an item to a collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'saved_item_id' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'saved_item_id is required'
+            }), 400
+        
+        saved_item_id = data['saved_item_id']
+        position = data.get('position')
+        
+        # Verify the collection belongs to the user
+        collection = db_service.get_collection_details(collection_id, user_id)
+        if not collection:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+        
+        success = db_service.add_item_to_collection(collection_id, saved_item_id, position)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item added to collection successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to add item to collection'
+            }), 400
+    except Exception as e:
+        print(f"Error adding item to collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error adding item to collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/items/<saved_item_id>', methods=['DELETE'])
+@require_auth
+def remove_item_from_collection(collection_id, saved_item_id):
+    """Remove an item from a collection"""
+    try:
+        user_id = get_current_user_id()
+        
+        # Verify the collection belongs to the user
+        collection = db_service.get_collection_details(collection_id, user_id)
+        if not collection:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+        
+        success = db_service.remove_item_from_collection(collection_id, saved_item_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item removed from collection successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to remove item from collection'
+            }), 400
+    except Exception as e:
+        print(f"Error removing item from collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error removing item from collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/reorder', methods=['POST'])
+@require_auth
+def reorder_collection_items(collection_id):
+    """Reorder items in a collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'item_positions' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'item_positions array is required'
+            }), 400
+        
+        item_positions = data['item_positions']
+        
+        # Validate item_positions format
+        for item_pos in item_positions:
+            if not isinstance(item_pos, dict) or 'saved_item_id' not in item_pos or 'position' not in item_pos:
+                return jsonify({
+                    'success': False,
+                    'error': 'Each item_position must have saved_item_id and position'
+                }), 400
+        
+        success = db_service.reorder_collection_items(collection_id, user_id, item_positions)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Collection items reordered successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to reorder collection items'
+            }), 400
+    except Exception as e:
+        print(f"Error reordering collection items: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error reordering collection items: {str(e)}'
         }), 500
 
 @app.route('/api/upload', methods=['POST'])

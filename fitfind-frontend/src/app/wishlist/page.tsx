@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp } from "lucide-react";
+import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp, FolderHeart, Plus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWishlist } from "@/hooks/useWishlist";
+import { useCollections } from "@/hooks";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,9 @@ import {
   WishlistFilters, 
   WishlistActions 
 } from "@/components/wishlist";
-import type { WishlistItemDetailed, BulkOperation } from "@/types";
+import { CollectionModal } from "@/components/collections";
+import type { WishlistItemDetailed, BulkOperation, Collection } from "@/types";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type ModalState = 
   | { isOpen: false }
@@ -21,10 +24,16 @@ type ModalState =
 
 export default function WishlistPage() {
   const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const addToCollectionId = searchParams.get('addToCollection');
+  
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
   const [selectedItems, setSelectedItems] = useState<WishlistItemDetailed[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showCreateCollectionModal, setShowCreateCollectionModal] = useState(false);
+  const [showCollectionsSection, setShowCollectionsSection] = useState(false);
 
   // Debug logging for wishlist page auth state
   useEffect(() => {
@@ -51,6 +60,16 @@ export default function WishlistPage() {
   } = useWishlist({
     autoFetch: !!user,
     initialLimit: 20
+  });
+
+  // Collections hook
+  const {
+    collections,
+    filteredCollections,
+    createNewCollection,
+    operations: collectionOps
+  } = useCollections({
+    autoFetch: !!user
   });
 
   // Show loading state while checking authentication
@@ -151,6 +170,15 @@ export default function WishlistPage() {
           }
         }
         break;
+
+      case 'add_to_collection':
+        // Add selected items to a collection
+        if (operation.data?.collection_id) {
+          // This would require implementing bulk add to collection API
+          console.log('Adding items to collection:', operation.data.collection_id);
+          // TODO: Implement bulk add to collection
+        }
+        break;
         
       case 'export':
         // Export selected items (placeholder implementation)
@@ -219,6 +247,14 @@ export default function WishlistPage() {
     setShowBulkActions(false);
   };
 
+  const handleCreateCollection = async (data: any) => {
+    await createNewCollection(data.name, { 
+      description: data.description, 
+      is_private: data.is_private 
+    });
+    setShowCreateCollectionModal(false);
+  };
+
   const isAllSelected = selectedItems.length === filteredWishlist.length && filteredWishlist.length > 0;
 
   return (
@@ -249,6 +285,26 @@ export default function WishlistPage() {
 
             {/* View Controls */}
             <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/collections')}
+                className="border-primary/20 hover:border-primary/40 hover:bg-primary/5 gap-2"
+              >
+                <FolderHeart className="h-4 w-4" />
+                Collections
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCreateCollectionModal(true)}
+                className="border-primary/20 hover:border-primary/40 hover:bg-primary/5 gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Collection
+              </Button>
+              
               <div className="flex items-center bg-muted/50 rounded-lg p-1 border border-border/50">
                 <Button
                   variant={filters.viewMode === 'grid' ? 'default' : 'ghost'}
@@ -398,6 +454,15 @@ export default function WishlistPage() {
           />
         )}
       </div>
+
+      {/* Create Collection Modal */}
+      <CollectionModal
+        open={showCreateCollectionModal}
+        onOpenChange={setShowCreateCollectionModal}
+        onSubmit={handleCreateCollection}
+        isLoading={collectionOps.isCreating}
+        title="Create New Collection"
+      />
     </div>
   );
 } 
