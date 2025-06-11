@@ -416,6 +416,275 @@ def update_wishlist_item():
             'error': f'Error updating wishlist item: {str(e)}'
         }), 500
 
+# Collections Endpoints
+
+@app.route('/api/collections', methods=['GET'])
+@require_auth
+def get_collections():
+    """Get user's collections"""
+    try:
+        user_id = get_current_user_id()
+        collections = db_service.get_collections_by_user(user_id)
+        
+        return jsonify({
+            'success': True,
+            'collections': collections
+        })
+    except Exception as e:
+        print(f"Error getting collections: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting collections: {str(e)}'
+        }), 500
+
+@app.route('/api/collections', methods=['POST'])
+@require_auth
+def create_collection():
+    """Create a new collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'name' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Collection name is required'
+            }), 400
+        
+        name = data['name']
+        description = data.get('description')
+        is_private = data.get('is_private', False)
+        
+        # Check for duplicate collection names
+        existing_collections = db_service.get_collections_by_user(user_id)
+        if any(collection['name'].lower() == name.lower() for collection in existing_collections):
+            return jsonify({
+                'success': False,
+                'error': 'A collection with this name already exists'
+            }), 400
+        
+        collection = db_service.create_collection(user_id, name, description, is_private)
+        
+        if collection:
+            # Add item_count for consistency
+            collection['item_count'] = 0
+            return jsonify({
+                'success': True,
+                'collection': collection,
+                'message': 'Collection created successfully'
+            }), 201
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create collection'
+            }), 400
+    except Exception as e:
+        print(f"Error creating collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error creating collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['GET'])
+@require_auth
+def get_collection_items(collection_id):
+    """Get items in a collection with pagination"""
+    try:
+        user_id = get_current_user_id()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        # Get collection details
+        collection = db_service.get_collection_by_id(collection_id, user_id)
+        if not collection:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+        
+        # Get items in collection
+        items = db_service.get_items_in_collection(collection_id, user_id, limit, offset)
+        total_count = db_service.get_collection_items_count(collection_id)
+        
+        return jsonify({
+            'success': True,
+            'collection': collection,
+            'items': items,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'has_more': len(items) == limit,
+                'total_count': total_count
+            }
+        })
+    except Exception as e:
+        print(f"Error getting collection items: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error getting collection items: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['PUT'])
+@require_auth
+def update_collection(collection_id):
+    """Update a collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Check if collection exists and belongs to user
+        existing_collection = db_service.get_collection_by_id(collection_id, user_id)
+        if not existing_collection:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+        
+        # Prevent renaming the default collection
+        if existing_collection.get('name') == 'My Favorites' and 'name' in data:
+            if data['name'] != 'My Favorites':
+                return jsonify({
+                    'success': False,
+                    'error': 'Cannot rename the default "My Favorites" collection'
+                }), 400
+        
+        # Check for duplicate names if name is being updated
+        if 'name' in data and data['name'] != existing_collection.get('name'):
+            existing_collections = db_service.get_collections_by_user(user_id)
+            if any(collection['name'].lower() == data['name'].lower() for collection in existing_collections):
+                return jsonify({
+                    'success': False,
+                    'error': 'A collection with this name already exists'
+                }), 400
+        
+        updated_collection = db_service.update_collection(collection_id, user_id, data)
+        
+        if updated_collection:
+            return jsonify({
+                'success': True,
+                'collection': updated_collection,
+                'message': 'Collection updated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update collection'
+            }), 400
+    except Exception as e:
+        print(f"Error updating collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error updating collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>', methods=['DELETE'])
+@require_auth
+def delete_collection(collection_id):
+    """Delete a collection"""
+    try:
+        user_id = get_current_user_id()
+        
+        # Check if collection exists and belongs to user
+        existing_collection = db_service.get_collection_by_id(collection_id, user_id)
+        if not existing_collection:
+            return jsonify({
+                'success': False,
+                'error': 'Collection not found'
+            }), 404
+        
+        # Prevent deleting the default collection
+        if existing_collection.get('name') == 'My Favorites':
+            return jsonify({
+                'success': False,
+                'error': 'Cannot delete the default "My Favorites" collection'
+            }), 400
+        
+        success = db_service.delete_collection(collection_id, user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Collection deleted successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to delete collection'
+            }), 400
+    except Exception as e:
+        print(f"Error deleting collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error deleting collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/items', methods=['POST'])
+@require_auth
+def add_item_to_collection(collection_id):
+    """Add an item to a collection"""
+    try:
+        user_id = get_current_user_id()
+        data = request.get_json()
+        
+        if not data or 'saved_item_id' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Saved item ID is required'
+            }), 400
+        
+        saved_item_id = data['saved_item_id']
+        
+        success = db_service.add_item_to_collection(collection_id, saved_item_id, user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item added to collection successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to add item to collection. Item may already be in the collection or not found.'
+            }), 400
+    except Exception as e:
+        print(f"Error adding item to collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error adding item to collection: {str(e)}'
+        }), 500
+
+@app.route('/api/collections/<collection_id>/items/<saved_item_id>', methods=['DELETE'])
+@require_auth
+def remove_item_from_collection(collection_id, saved_item_id):
+    """Remove an item from a collection"""
+    try:
+        user_id = get_current_user_id()
+        
+        success = db_service.remove_item_from_collection(collection_id, saved_item_id, user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Item removed from collection successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to remove item from collection'
+            }), 400
+    except Exception as e:
+        print(f"Error removing item from collection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error removing item from collection: {str(e)}'
+        }), 500
+
 @app.route('/api/upload', methods=['POST'])
 @optional_auth
 def upload_file():

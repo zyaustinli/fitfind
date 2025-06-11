@@ -302,6 +302,21 @@ class DatabaseService:
                 wishlist_item = insert_response.data[0]
                 # Attach the full product details for the frontend response
                 wishlist_item["products"] = product_data
+                
+                # Automatically add to the user's default "My Favorites" collection
+                default_collection = self.get_default_collection(user_id)
+                if not default_collection:
+                    # Create the default "My Favorites" collection if it doesn't exist
+                    default_collection = self.create_collection(
+                        user_id=user_id, 
+                        name="My Favorites", 
+                        description="Your saved items automatically go here",
+                        is_private=False
+                    )
+                
+                if default_collection:
+                    self.add_item_to_collection(default_collection["id"], wishlist_item["id"], user_id)
+                
                 return wishlist_item
             
             return None
@@ -704,6 +719,237 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error cleaning up anonymous sessions: {e}")
             return False
+
+    # Collection Management Methods
+    def get_collections_by_user(self, user_id: str) -> List[Dict]:
+        """Fetch all collections for a given user with item count"""
+        try:
+            # Get collections with item count using a join query
+            response = (self.service_client.table("user_collections")
+                       .select("""
+                           *,
+                           collection_items(count)
+                       """)
+                       .eq("user_id", user_id)
+                       .order("created_at", desc=True)
+                       .execute())
+            
+            collections = response.data or []
+            
+            # Add item_count field for easier frontend consumption
+            for collection in collections:
+                item_count = collection.get("collection_items", [])
+                collection["item_count"] = len(item_count) if isinstance(item_count, list) else (item_count[0]["count"] if item_count else 0)
+                # Remove the nested structure, we only want the count
+                if "collection_items" in collection:
+                    del collection["collection_items"]
+                    
+            return collections
+        except Exception as e:
+            logger.error(f"Error getting collections for user {user_id}: {e}")
+            return []
+
+    def get_collection_by_id(self, collection_id: str, user_id: str) -> Optional[Dict]:
+        """Fetch a single collection, ensuring it belongs to the user"""
+        try:
+            response = (self.service_client.table("user_collections")
+                       .select("*")
+                       .eq("id", collection_id)
+                       .eq("user_id", user_id)
+                       .execute())
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting collection {collection_id}: {e}")
+            return None
+
+    def create_collection(self, user_id: str, name: str, description: str = None, is_private: bool = False) -> Optional[Dict]:
+        """Create a new collection for the user"""
+        try:
+            collection_data = {
+                "user_id": user_id,
+                "name": name,
+                "description": description,
+                "is_private": is_private
+            }
+            response = (self.service_client.table("user_collections")
+                       .insert(collection_data)
+                       .execute())
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error creating collection for user {user_id}: {e}")
+            return None
+
+    def update_collection(self, collection_id: str, user_id: str, updates: Dict) -> Optional[Dict]:
+        """Update a collection's name, description, or privacy"""
+        try:
+            allowed_updates = {k: v for k, v in updates.items() if k in ['name', 'description', 'is_private', 'cover_image_url']}
+            if not allowed_updates:
+                return None
+
+            response = (self.service_client.table("user_collections")
+                       .update(allowed_updates)
+                       .eq("id", collection_id)
+                       .eq("user_id", user_id)
+                       .execute())
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error updating collection {collection_id}: {e}")
+            return None
+
+    def delete_collection(self, collection_id: str, user_id: str) -> bool:
+        """Delete a collection. ON DELETE CASCADE will handle orphaned collection_items"""
+        try:
+            response = (self.service_client.table("user_collections")
+                       .delete()
+                       .eq("id", collection_id)
+                       .eq("user_id", user_id)
+                       .execute())
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting collection {collection_id}: {e}")
+            return False
+
+    def get_items_in_collection(self, collection_id: str, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
+        """Fetch saved items belonging to a specific collection with pagination"""
+        try:
+            # Enforce reasonable limits
+            limit = min(limit, 100)  # Maximum 100 items per request
+            
+            # First verify the collection belongs to the user
+            collection = self.get_collection_by_id(collection_id, user_id)
+            if not collection:
+                logger.warning(f"Collection {collection_id} not found or not owned by user {user_id}")
+                return []
+            
+            # Get collection items with joined saved items and products
+            response = (self.service_client.table("collection_items")
+                       .select("""
+                           *,
+                           user_saved_items(*, products(*))
+                       """)
+                       .eq("collection_id", collection_id)
+                       .order("position", desc=False)
+                       .order("added_at", desc=True)
+                       .range(offset, offset + limit - 1)
+                       .execute())
+            
+            # Transform the response to match the wishlist item structure
+            items = []
+            for item in response.data or []:
+                saved_item = item.get("user_saved_items")
+                if saved_item:
+                    # Add collection-specific metadata
+                    saved_item["collection_position"] = item.get("position", 0)
+                    saved_item["added_to_collection_at"] = item.get("added_at")
+                    items.append(saved_item)
+            
+            return items
+        except Exception as e:
+            logger.error(f"Error getting items in collection {collection_id}: {e}")
+            return []
+
+    def add_item_to_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> bool:
+        """Add a saved item to a collection"""
+        try:
+            # Verify the collection belongs to the user
+            collection = self.get_collection_by_id(collection_id, user_id)
+            if not collection:
+                logger.warning(f"Collection {collection_id} not found or not owned by user {user_id}")
+                return False
+            
+            # Verify the saved item belongs to the user
+            saved_item_response = (self.service_client.table("user_saved_items")
+                                 .select("id")
+                                 .eq("id", saved_item_id)
+                                 .eq("user_id", user_id)
+                                 .execute())
+            
+            if not saved_item_response.data:
+                logger.warning(f"Saved item {saved_item_id} not found or not owned by user {user_id}")
+                return False
+            
+            # Check if item is already in the collection
+            existing_response = (self.service_client.table("collection_items")
+                               .select("id")
+                               .eq("collection_id", collection_id)
+                               .eq("saved_item_id", saved_item_id)
+                               .execute())
+            
+            if existing_response.data:
+                logger.warning(f"Item {saved_item_id} is already in collection {collection_id}")
+                return False
+            
+            # Get the next position in the collection
+            position_response = (self.service_client.table("collection_items")
+                               .select("position")
+                               .eq("collection_id", collection_id)
+                               .order("position", desc=True)
+                               .limit(1)
+                               .execute())
+            
+            next_position = 0
+            if position_response.data:
+                next_position = (position_response.data[0]["position"] or 0) + 1
+            
+            # Add the item to the collection
+            collection_item_data = {
+                "collection_id": collection_id,
+                "saved_item_id": saved_item_id,
+                "position": next_position
+            }
+            response = (self.service_client.table("collection_items")
+                       .insert(collection_item_data)
+                       .execute())
+            
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error adding item {saved_item_id} to collection {collection_id}: {e}")
+            return False
+
+    def remove_item_from_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> bool:
+        """Remove a saved item from a collection"""
+        try:
+            # Verify the collection belongs to the user
+            collection = self.get_collection_by_id(collection_id, user_id)
+            if not collection:
+                logger.warning(f"Collection {collection_id} not found or not owned by user {user_id}")
+                return False
+            
+            # Remove the item from the collection
+            response = (self.service_client.table("collection_items")
+                       .delete()
+                       .eq("collection_id", collection_id)
+                       .eq("saved_item_id", saved_item_id)
+                       .execute())
+            return True
+        except Exception as e:
+            logger.error(f"Error removing item {saved_item_id} from collection {collection_id}: {e}")
+            return False
+
+    def get_default_collection(self, user_id: str) -> Optional[Dict]:
+        """Get the user's default 'My Favorites' collection"""
+        try:
+            response = (self.service_client.table("user_collections")
+                       .select("*")
+                       .eq("user_id", user_id)
+                       .eq("name", "My Favorites")
+                       .execute())
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting default collection for user {user_id}: {e}")
+            return None
+
+    def get_collection_items_count(self, collection_id: str) -> int:
+        """Get total count of items in a collection"""
+        try:
+            response = (self.service_client.table("collection_items")
+                       .select("id", count="exact")
+                       .eq("collection_id", collection_id)
+                       .execute())
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error getting collection items count: {e}")
+            return 0
 
 # Global database service instance
 db_service = DatabaseService() 

@@ -325,4 +325,69 @@ export interface WishlistStats {
     category: string;
     count: number;
   }>;
+}
+
+// Collection Types
+export interface Collection {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  cover_image_url: string | null;
+  is_private: boolean;
+  created_at: string;
+  updated_at: string;
+  item_count?: number; // From the backend join
+}
+
+export interface CollectionItem {
+  id: string;
+  collection_id: string;
+  saved_item_id: string;
+  position: number;
+  added_at: string;
+}
+
+export interface CollectionsResponse {
+  success: boolean;
+  collections: Collection[];
+  error?: string;
+}
+
+export interface CollectionResponse {
+  success: boolean;
+  collection?: Collection;
+  error?: string;
+}
+
+export interface CollectionItemsResponse {
+  success: boolean;
+  collection?: Collection;
+  items: WishlistItemDetailed[];
+  pagination: PaginationInfo;
+  error?: string;
+}
+
+export interface CollectionCreateRequest {
+  name: string;
+  description?: string;
+  is_private?: boolean;
+}
+
+export interface CollectionUpdateRequest {
+  name?: string;
+  description?: string;
+  is_private?: boolean;
+  cover_image_url?: string;
+}
+
+export interface AddItemToCollectionRequest {
+  saved_item_id: string;
+}
+
+export interface CollectionOperationResponse {
+  success: boolean;
+  message?: string;
+  collection?: Collection;
+  error?: string;
 } 

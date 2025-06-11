@@ -10,7 +10,8 @@ import {
   Edit3,
   Share2,
   Trash2,
-  Check
+  Check,
+  FolderPlus
 } from "lucide-react";
 import { cn, formatPrice, truncateText, formatDistanceToNow } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ interface WishlistCardProps {
   onRemove?: (item: WishlistItemDetailed) => void;
   onUpdate?: (item: WishlistItemDetailed, updates: { notes?: string; tags?: string[] }) => void;
   onShare?: (item: WishlistItemDetailed) => void;
+  onAddToCollection?: (item: WishlistItemDetailed) => void;
   className?: string;
   isSelected?: boolean;
   onSelect?: (item: WishlistItemDetailed, selected: boolean) => void;
@@ -34,6 +36,7 @@ export function WishlistCard({
   onRemove, 
   onUpdate,
   onShare,
+  onAddToCollection,
   className,
   isSelected = false,
   onSelect,
@@ -95,6 +98,11 @@ export function WishlistCard({
         console.error('Failed to copy to clipboard:', err);
       }
     }
+    setShowDropdown(false);
+  };
+
+  const handleAddToCollection = () => {
+    onAddToCollection?.(item);
     setShowDropdown(false);
   };
 
@@ -201,6 +209,13 @@ export function WishlistCard({
                   {showDropdown && (
                     <div className="absolute right-0 top-full mt-1 w-40 bg-popover border border-border rounded-md shadow-md z-10">
                       <div className="py-1">
+                        <button
+                          onClick={handleAddToCollection}
+                          className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
+                        >
+                          <FolderPlus className="h-4 w-4" />
+                          Add to Collection
+                        </button>
                         <button
                           onClick={() => {
                             setIsEditing(true);
@@ -396,6 +411,15 @@ export function WishlistCard({
           >
             <ExternalLink className="h-4 w-4" />
             View
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleAddToCollection}
+            className="bg-white/90 text-gray-900 hover:bg-white"
+          >
+            <FolderPlus className="h-4 w-4" />
+            Add
           </Button>
           <Button
             variant="secondary"
