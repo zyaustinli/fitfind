@@ -738,8 +738,12 @@ class DatabaseService:
             
             # Add item_count field for easier frontend consumption
             for collection in collections:
-                item_count = collection.get("collection_items", [])
-                collection["item_count"] = len(item_count) if isinstance(item_count, list) else (item_count[0]["count"] if item_count else 0)
+                item_count_data = collection.get("collection_items", [])
+                # Fix: Correctly extract count from Supabase response
+                if isinstance(item_count_data, list) and len(item_count_data) > 0 and 'count' in item_count_data[0]:
+                    collection["item_count"] = item_count_data[0]["count"]
+                else:
+                    collection["item_count"] = 0
                 # Remove the nested structure, we only want the count
                 if "collection_items" in collection:
                     del collection["collection_items"]
@@ -822,10 +826,11 @@ class DatabaseService:
                 return []
             
             # Get collection items with joined saved items and products
+            # Fix: Use proper foreign key hint for Supabase
             response = (self.service_client.table("collection_items")
                        .select("""
                            *,
-                           user_saved_items(*, products(*))
+                           saved_item_id!inner(*, product_id!inner(*))
                        """)
                        .eq("collection_id", collection_id)
                        .order("position", desc=False)
@@ -836,8 +841,10 @@ class DatabaseService:
             # Transform the response to match the wishlist item structure
             items = []
             for item in response.data or []:
-                saved_item = item.get("user_saved_items")
-                if saved_item:
+                saved_item = item.get("saved_item_id")
+                if saved_item and saved_item.get("product_id"):
+                    # Fix: Rename product_id to products to match wishlist structure
+                    saved_item["products"] = saved_item.pop("product_id")
                     # Add collection-specific metadata
                     saved_item["collection_position"] = item.get("position", 0)
                     saved_item["added_to_collection_at"] = item.get("added_at")

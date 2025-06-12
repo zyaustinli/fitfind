@@ -485,7 +485,7 @@ def create_collection():
             'error': f'Error creating collection: {str(e)}'
         }), 500
 
-@app.route('/api/collections/<collection_id>', methods=['GET'])
+@app.route('/api/collections/<collection_id>/items', methods=['GET'])
 @require_auth
 def get_collection_items(collection_id):
     """Get items in a collection with pagination"""

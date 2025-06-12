@@ -77,6 +77,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   const mountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
+  
+  // FIX #1: Add a ref to track pagination state without causing re-renders
+  const paginationRef = useRef(collectionPagination);
+  useEffect(() => {
+    paginationRef.current = collectionPagination;
+  }, [collectionPagination]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -161,12 +167,20 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   const updateExistingCollection = useCallback(async (
     id: string,
-    updates: { name?: string; description?: string; is_private?: boolean; cover_image_url?: string }
+    updates: Partial<Collection>
   ): Promise<boolean> => {
     if (!user) return false;
 
     try {
-      const response: CollectionResponse = await updateCollection(id, updates);
+      // Filter to only allowed update fields and handle null values
+      const allowedUpdates = {
+        ...(updates.name !== undefined && { name: updates.name }),
+        ...(updates.description !== undefined && { description: updates.description }),
+        ...(updates.is_private !== undefined && { is_private: updates.is_private }),
+        ...(updates.cover_image_url !== undefined && { cover_image_url: updates.cover_image_url })
+      };
+      
+      const response: CollectionResponse = await updateCollection(id, allowedUpdates);
       
       if (response.success && response.collection) {
         setCollections(prev => 
@@ -236,7 +250,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   ) => {
     if (!user) return;
 
-    const currentOffset = reset ? 0 : (collectionPagination?.offset || 0);
+    // FIX #2: Use the ref to get the current offset, preventing a dependency cycle
+    const currentOffset = reset ? 0 : (paginationRef.current?.offset || 0);
+    const limitToFetch = 50;
     
     setLoading({
       isLoading: true,
@@ -246,13 +262,18 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     try {
       const response: CollectionItemsResponse = await getCollectionItems(
         collectionId,
-        50,
+        limitToFetch,
         currentOffset
       );
 
       if (!mountedRef.current) return;
 
       if (response.success) {
+        // FIX #3: Set the current collection from the API response
+        if (response.collection) {
+          setCurrentCollection(response.collection);
+        }
+
         setCollectionItems(prev => 
           reset ? response.items : [...prev, ...response.items]
         );
@@ -274,7 +295,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         setLoading({ isLoading: false });
       }
     }
-  }, [user, collectionPagination]);
+  // FIX #4: Update the dependency array to remove the object that causes the loop
+  }, [user]);
 
   const addToCollection = useCallback(async (
     collectionId: string,
