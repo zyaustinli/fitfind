@@ -268,7 +268,13 @@ export interface WishlistItem {
   addedAt: Date;
 }
 
-// API Error Types
+// API Response Types
+export interface ApiResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 export interface ApiErrorResponse {
   success: false;
   error: string;
@@ -325,9 +331,7 @@ export interface WishlistStats {
     category: string;
     count: number;
   }>;
-}
-
-// Collection Types
+}// Collection Types
 export interface Collection {
   id: string;
   user_id: string;
@@ -391,3 +395,4 @@ export interface CollectionOperationResponse {
   collection?: Collection;
   error?: string;
 } 
+

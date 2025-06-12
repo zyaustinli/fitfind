@@ -143,7 +143,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       const response: CollectionResponse = await createCollection(name, { description, is_private: isPrivate });
       
       if (response.success && response.collection) {
-        setCollections(prev => [...prev, response.collection]);
+        setCollections(prev => [...prev, response.collection!]);
         return response.collection;
       } else {
         throw new Error(response.error || 'Failed to create collection');
@@ -161,7 +161,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   const updateExistingCollection = useCallback(async (
     id: string,
-    updates: Partial<Collection>
+    updates: { name?: string; description?: string; is_private?: boolean; cover_image_url?: string }
   ): Promise<boolean> => {
     if (!user) return false;
 
@@ -170,7 +170,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       
       if (response.success && response.collection) {
         setCollections(prev => 
-          prev.map(col => col.id === id ? response.collection : col)
+          prev.map(col => col.id === id ? response.collection! : col)
         );
         
         if (currentCollection?.id === id) {
