@@ -1,34 +1,33 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp } from "lucide-react";
+import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp, Plus, FolderHeart } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useWishlist } from "@/hooks/useWishlist";
+import { useCollections } from "@/hooks/useCollections";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  WishlistGrid, 
-  WishlistFilters, 
-  WishlistActions 
-} from "@/components/wishlist";
-import type { WishlistItemDetailed, BulkOperation } from "@/types";
+import { CollectionCard, CreateCollectionModal } from "@/components/collections";
+import type { Collection } from "@/types";
 
 type ModalState = 
   | { isOpen: false }
   | { isOpen: true; mode: 'login' | 'signup' }
 
-export default function WishlistPage() {
+type CreateCollectionModalState =
+  | { isOpen: false }
+  | { isOpen: true }
+
+export default function CollectionsPage() {
   const { user, loading: authLoading } = useAuth();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
-  const [selectedItems, setSelectedItems] = useState<WishlistItemDetailed[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [createModalState, setCreateModalState] = useState<CreateCollectionModalState>({ isOpen: false });
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Debug logging for wishlist page auth state
+  // Debug logging for collections page auth state
   useEffect(() => {
-    console.log('📋 Wishlist page auth state:', {
+    console.log('📁 Collections page auth state:', {
       hasUser: !!user,
       userEmail: user?.email,
       authLoading,
@@ -37,25 +36,28 @@ export default function WishlistPage() {
   }, [user, authLoading]);
 
   const {
-    filteredWishlist,
-    filters,
+    collections,
     loading,
     error,
-    hasMore,
-    totalCount,
-    setFilters,
-    resetFilters,
-    loadMore,
-    updateItem,
-    removeItem
-  } = useWishlist({
-    autoFetch: !!user,
-    initialLimit: 20
+    fetchCollections,
+    createNewCollection,
+    defaultCollection,
+    hasCollections,
+    isEmpty,
+    totalCollections
+  } = useCollections({
+    autoFetch: !!user
   });
+
+  // Filter collections based on search query
+  const filteredCollections = collections.filter(collection =>
+    collection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (collection.description && collection.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   // Show loading state while checking authentication
   if (authLoading) {
-    console.log('📋 Wishlist showing loading state');
+    console.log('📁 Collections showing loading state');
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
         <div className="flex h-screen items-center justify-center">
@@ -70,7 +72,7 @@ export default function WishlistPage() {
 
   // Show authentication required message if not signed in
   if (!user) {
-    console.log('📋 Wishlist showing sign-in required');
+    console.log('📁 Collections showing sign-in required');
     return (
       <>
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -80,16 +82,16 @@ export default function WishlistPage() {
               <div className="relative mb-8 mx-auto w-24 h-24">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full blur-xl"></div>
                 <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-purple-600/10 rounded-full flex items-center justify-center border border-primary/20">
-                  <Heart className="w-10 h-10 text-primary" />
+                  <FolderHeart className="w-10 h-10 text-primary" />
                   <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-purple-600 animate-pulse" />
                 </div>
               </div>
               
               <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent mb-4">
-                Your AI-Powered Wishlist
+                Your Style Collections
               </h1>
               <p className="text-muted-foreground mb-8 leading-relaxed">
-                Create an account to save your favorite finds, let AI organize your style preferences, and never lose track of that perfect outfit again.
+                Create an account to organize your fashion finds into beautiful collections, discover new trends, and build your perfect wardrobe.
               </p>
               
               <div className="space-y-3">
@@ -126,100 +128,10 @@ export default function WishlistPage() {
     );
   }
 
-  const handleBulkAction = async (operation: BulkOperation) => {
-    switch (operation.type) {
-      case 'delete':
-        // Remove selected items
-        for (const id of operation.selectedIds) {
-          const item = filteredWishlist.find(item => item.id === id);
-          if (item) {
-            await removeItem(item.products.id);
-          }
-        }
-        setSelectedItems([]);
-        setShowBulkActions(false);
-        break;
-        
-      case 'tag':
-        // Add tags to selected items
-        for (const id of operation.selectedIds) {
-          const item = filteredWishlist.find(item => item.id === id);
-          if (item && operation.data?.tags) {
-            const existingTags = item.tags || [];
-            const newTags = [...new Set([...existingTags, ...operation.data.tags])];
-            await updateItem(item.id, { tags: newTags });
-          }
-        }
-        break;
-        
-      case 'export':
-        // Export selected items (placeholder implementation)
-        const exportData = selectedItems.map(item => ({
-          title: item.products.title,
-          price: item.products.price,
-          url: item.products.product_url,
-          source: item.products.source,
-          notes: item.notes,
-          tags: item.tags,
-          added_date: item.created_at
-        }));
-        
-        // Create and download JSON file
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-          type: 'application/json' 
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `wishlist-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        break;
-    }
+  const handleCreateCollection = async (name: string, description?: string, isPrivate?: boolean): Promise<boolean> => {
+    const newCollection = await createNewCollection(name, description, isPrivate);
+    return !!newCollection;
   };
-
-  const handleRemoveItem = async (item: WishlistItemDetailed) => {
-    await removeItem(item.products.id);
-  };
-
-  const handleUpdateItem = async (
-    item: WishlistItemDetailed, 
-    updates: { notes?: string; tags?: string[] }
-  ) => {
-    await updateItem(item.id, updates);
-  };
-
-  const handleViewModeChange = (mode: 'grid' | 'list') => {
-    setFilters({ viewMode: mode });
-  };
-
-  const handleBulkSelect = (items: WishlistItemDetailed[]) => {
-    setSelectedItems(items);
-    if (items.length > 0 && !showBulkActions) {
-      setShowBulkActions(true);
-    } else if (items.length === 0 && showBulkActions) {
-      setShowBulkActions(false);
-    }
-  };
-
-  const handleSelectAll = () => {
-    setSelectedItems(filteredWishlist);
-    setShowBulkActions(true);
-  };
-
-  const handleDeselectAll = () => {
-    setSelectedItems([]);
-    setShowBulkActions(false);
-  };
-
-  const handleCancelBulkActions = () => {
-    setSelectedItems([]);
-    setShowBulkActions(false);
-  };
-
-  const isAllSelected = selectedItems.length === filteredWishlist.length && filteredWishlist.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -231,173 +143,132 @@ export default function WishlistPage() {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-xl flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-primary" />
+                    <FolderHeart className="w-5 h-5 text-primary" />
                   </div>
                   <Stars className="absolute -top-1 -right-1 w-4 h-4 text-purple-600 animate-pulse" />
                 </div>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-purple-600 bg-clip-text text-transparent">
-                  Your Wishlist
+                  Your Collections
                 </h1>
               </div>
               <p className="text-muted-foreground text-lg">
-                {totalCount > 0 
-                  ? `${totalCount} curated item${totalCount !== 1 ? 's' : ''} waiting to complete your style`
-                  : 'Start building your perfect style collection'
+                {totalCollections > 0 
+                  ? `${totalCollections} collection${totalCollections !== 1 ? 's' : ''} organizing your style discoveries`
+                  : 'Start organizing your fashion finds into beautiful collections'
                 }
               </p>
             </div>
 
-            {/* View Controls */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center bg-muted/50 rounded-lg p-1 border border-border/50">
-                <Button
-                  variant={filters.viewMode === 'grid' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => handleViewModeChange('grid')}
-                  className={filters.viewMode === 'grid' 
-                    ? 'bg-primary text-primary-foreground shadow-sm' 
-                    : 'hover:bg-background/80'
-                  }
-                >
-                  <Grid3X3 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={filters.viewMode === 'list' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => handleViewModeChange('list')}
-                  className={filters.viewMode === 'list' 
-                    ? 'bg-primary text-primary-foreground shadow-sm' 
-                    : 'hover:bg-background/80'
-                  }
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-              </div>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowBulkActions(!showBulkActions)}
-                className="border-primary/20 hover:border-primary/40 hover:bg-primary/5"
-              >
-                <LayoutGrid className="h-4 w-4 mr-2" />
-                {showBulkActions ? 'Exit Selection' : 'Bulk Actions'}
-              </Button>
-            </div>
+            {/* Create Collection Button */}
+            <Button
+              onClick={() => setCreateModalState({ isOpen: true })}
+              className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+              size="lg"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              New Collection
+            </Button>
           </div>
 
-          {/* Enhanced Search and Quick Filters */}
-          <div className="space-y-4">
-            {/* Search Bar */}
+          {/* Search Bar */}
+          {hasCollections && (
             <div className="relative max-w-2xl">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
-                placeholder="Search your saved items by brand, style, color..."
-                value={filters.searchQuery || ''}
-                onChange={(e) => setFilters({ searchQuery: e.target.value || undefined })}
+                placeholder="Search your collections..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-12 h-12 bg-background/50 border-border/50 focus:border-primary/50 focus:bg-background transition-all duration-300"
               />
-              {filters.searchQuery && (
+              {searchQuery && (
                 <button
-                  onClick={() => setFilters({ searchQuery: undefined })}
+                  onClick={() => setSearchQuery("")}
                   className="absolute right-4 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   ×
                 </button>
               )}
             </div>
-
-            {/* Quick Filter Pills */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Quick filters:</span>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="h-6 px-2 text-xs cursor-pointer hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                  onClick={() => setFilters({ sortBy: 'price_low' })}
-                >
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  Lowest Price
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="h-6 px-2 text-xs cursor-pointer hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                  onClick={() => setFilters({ sortBy: 'newest' })}
-                >
-                  Recently Added
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="h-6 px-2 text-xs cursor-pointer hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                  onClick={() => setFilters({ tags: ['favorites'] })}
-                >
-                  Favorites
-                </Button>
-              </div>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className="border-primary/20 hover:border-primary/40 hover:bg-primary/5"
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Advanced Filters
-                {Object.keys(filters).length > 1 && (
-                  <Badge variant="secondary" className="ml-2 text-xs">
-                    {Object.keys(filters).length - 1}
-                  </Badge>
-                )}
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Advanced Filters */}
-        {showAdvancedFilters && (
-          <div className="mb-6 animate-in slide-in-from-bottom-4 duration-300">
-            <WishlistFilters
-              filters={filters}
-              items={filteredWishlist}
-              onFiltersChange={setFilters}
-              onReset={resetFilters}
-              className="bg-background/50 border-border/50 backdrop-blur-sm"
-            />
+        {/* Loading State */}
+        {loading.isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+              <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-t-purple-600 rounded-full animate-spin animate-reverse"></div>
+            </div>
           </div>
         )}
 
-        {/* Main Content */}
-        <WishlistGrid
-          items={filteredWishlist}
-          loading={loading.isLoading}
-          error={error.hasError ? error.message : null}
-          filters={filters}
-          hasMore={hasMore}
-          onLoadMore={loadMore}
-          onUpdateItem={handleUpdateItem}
-          onRemoveItem={handleRemoveItem}
-          onViewModeChange={handleViewModeChange}
-          onBulkSelect={handleBulkSelect}
-          showBulkActions={showBulkActions}
-          itemsPerRow={4}
-        />
+        {/* Error State */}
+        {error.hasError && (
+          <div className="text-center py-12">
+            <div className="text-destructive mb-4">⚠️ {error.message}</div>
+            <Button onClick={fetchCollections} variant="outline">
+              Try Again
+            </Button>
+          </div>
+        )}
 
-        {/* Bulk Actions Toolbar */}
-        {showBulkActions && (
-          <WishlistActions
-            selectedItems={selectedItems}
-            onBulkAction={handleBulkAction}
-            onSelectAll={handleSelectAll}
-            onDeselectAll={handleDeselectAll}
-            onCancel={handleCancelBulkActions}
-            isAllSelected={isAllSelected}
-            totalItems={filteredWishlist.length}
-          />
+        {/* Empty State */}
+        {!loading.isLoading && !error.hasError && isEmpty && (
+          <div className="text-center py-12">
+            <div className="relative mb-8 mx-auto w-24 h-24">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full blur-xl"></div>
+              <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-purple-600/10 rounded-full flex items-center justify-center border border-primary/20">
+                <FolderHeart className="w-10 h-10 text-primary" />
+              </div>
+            </div>
+            
+            <h3 className="text-2xl font-bold mb-4">Start Your First Collection</h3>
+            <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
+              Organize your saved fashion items into beautiful collections. Create themed groups like "Work Outfits", "Summer Essentials", or "Dream Closet".
+            </p>
+            
+            <Button
+              onClick={() => setCreateModalState({ isOpen: true })}
+              className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+              size="lg"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Create Your First Collection
+            </Button>
+          </div>
+        )}
+
+        {/* Collections Grid */}
+        {!loading.isLoading && !error.hasError && hasCollections && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredCollections.map((collection) => (
+              <CollectionCard key={collection.id} collection={collection} />
+            ))}
+          </div>
+        )}
+
+        {/* No Search Results */}
+        {!loading.isLoading && !error.hasError && hasCollections && filteredCollections.length === 0 && searchQuery && (
+          <div className="text-center py-12">
+            <h3 className="text-xl font-semibold mb-2">No collections found</h3>
+            <p className="text-muted-foreground mb-4">
+              No collections match "{searchQuery}". Try a different search term.
+            </p>
+            <Button onClick={() => setSearchQuery("")} variant="outline">
+              Clear Search
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Create Collection Modal */}
+      <CreateCollectionModal
+        open={createModalState.isOpen}
+        onOpenChange={(open) => setCreateModalState({ isOpen: open })}
+        onCreateCollection={handleCreateCollection}
+      />
     </div>
   );
-} 
+}
+
+ 

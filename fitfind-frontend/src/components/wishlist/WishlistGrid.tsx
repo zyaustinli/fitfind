@@ -19,6 +19,7 @@ interface WishlistGridProps {
   onUpdateItem?: (item: WishlistItemDetailed, updates: { notes?: string; tags?: string[] }) => void;
   onRemoveItem?: (item: WishlistItemDetailed) => void;
   onShareItem?: (item: WishlistItemDetailed) => void;
+  onAddToCollection?: (item: WishlistItemDetailed) => void;
   onViewModeChange?: (mode: 'grid' | 'list') => void;
   onBulkSelect?: (items: WishlistItemDetailed[]) => void;
   className?: string;
@@ -36,6 +37,7 @@ export function WishlistGrid({
   onUpdateItem,
   onRemoveItem,
   onShareItem,
+  onAddToCollection,
   onViewModeChange,
   onBulkSelect,
   className,
@@ -198,6 +200,7 @@ export function WishlistGrid({
             onRemove={handleRemoveItem}
             onUpdate={onUpdateItem}
             onShare={onShareItem}
+            onAddToCollection={onAddToCollection}
             viewMode={filters.viewMode}
             isSelected={selectedItems.has(item.id)}
             onSelect={handleItemSelect}
