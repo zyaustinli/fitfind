@@ -20,6 +20,7 @@ export default function CollectionDetailPage() {
   const collectionId = params.collectionId as string;
   
   const [showManageModal, setShowManageModal] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const {
     currentCollection,
@@ -36,13 +37,21 @@ export default function CollectionDetailPage() {
 
   // Fetch collection data when component mounts
   useEffect(() => {
+    let isMounted = true;
     if (user && collectionId) {
-      fetchCollectionItems(collectionId);
+      fetchCollectionItems(collectionId, true).finally(() => {
+        if (isMounted) {
+          setIsInitialLoad(false);
+        }
+      });
+    } else if (!user && !authLoading) {
+      setIsInitialLoad(false);
     }
-  }, [user, collectionId, fetchCollectionItems]);
+    return () => { isMounted = false; };
+  }, [user, collectionId, fetchCollectionItems, authLoading]);
 
-  // Show loading state while checking authentication
-  if (authLoading) {
+  // Show loading state during initial load or auth loading
+  if (isInitialLoad || authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
         <div className="flex h-screen items-center justify-center">
@@ -93,16 +102,6 @@ export default function CollectionDetailPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-7xl mx-auto p-8">
-        {/* Loading State */}
-        {loading.isLoading && !currentCollection && (
-          <div className="flex items-center justify-center py-12">
-            <div className="relative">
-              <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-              <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-t-purple-600 rounded-full animate-spin animate-reverse"></div>
-            </div>
-          </div>
-        )}
-
         {/* Error State */}
         {error.hasError && (
           <div className="text-center py-12">
