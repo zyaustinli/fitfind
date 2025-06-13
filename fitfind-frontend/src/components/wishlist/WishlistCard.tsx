@@ -24,11 +24,13 @@ interface WishlistCardProps {
   onUpdate?: (item: WishlistItemDetailed, updates: { notes?: string; tags?: string[] }) => void;
   onShare?: (item: WishlistItemDetailed) => void;
   onAddToCollection?: (item: WishlistItemDetailed) => void;
+  onRemoveFromDatabase?: (item: WishlistItemDetailed) => void;
   className?: string;
   isSelected?: boolean;
   onSelect?: (item: WishlistItemDetailed, selected: boolean) => void;
   showCheckbox?: boolean;
   viewMode?: 'grid' | 'list';
+  context?: 'wishlist' | 'collection';
 }
 
 export function WishlistCard({ 
@@ -37,11 +39,13 @@ export function WishlistCard({
   onUpdate,
   onShare,
   onAddToCollection,
+  onRemoveFromDatabase,
   className,
   isSelected = false,
   onSelect,
   showCheckbox = false,
-  viewMode = 'grid'
+  viewMode = 'grid',
+  context = 'wishlist'
 }: WishlistCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -55,7 +59,13 @@ export function WishlistCard({
   const product = item.products;
 
   const handleRemove = () => {
-    onRemove?.(item);
+    if (context === 'collection' && onRemoveFromDatabase) {
+      // In collection context, remove from database but keep on page
+      onRemoveFromDatabase(item);
+    } else {
+      // In wishlist context, use regular remove
+      onRemove?.(item);
+    }
     setShowDropdown(false);
   };
 
@@ -91,11 +101,41 @@ export function WishlistCard({
       onShare(item);
     } else if (product.product_url) {
       try {
-        await navigator.clipboard.writeText(product.product_url);
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
+        // Try to use the Web Share API if available
+        if (navigator.share) {
+          await navigator.share({
+            title: product.title,
+            text: `Check out this item: ${product.title}`,
+            url: product.product_url
+          });
+        } else {
+          // Fallback to clipboard
+          await navigator.clipboard.writeText(product.product_url);
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        }
       } catch (err) {
-        console.error('Failed to copy to clipboard:', err);
+        // If sharing fails, fallback to clipboard
+        try {
+          await navigator.clipboard.writeText(product.product_url);
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        } catch (clipboardErr) {
+          console.error('Failed to copy to clipboard:', clipboardErr);
+          // As last resort, create a temporary text area to copy
+          const textArea = document.createElement('textarea');
+          textArea.value = product.product_url;
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand('copy');
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
+          } catch (e) {
+            console.error('All share methods failed:', e);
+          }
+          document.body.removeChild(textArea);
+        }
       }
     }
     setShowDropdown(false);
@@ -209,23 +249,27 @@ export function WishlistCard({
                   {showDropdown && (
                     <div className="absolute right-0 top-full mt-1 w-40 bg-popover border border-border rounded-md shadow-md z-10">
                       <div className="py-1">
-                        <button
-                          onClick={handleAddToCollection}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
-                        >
-                          <FolderPlus className="h-4 w-4" />
-                          Add to Collection
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsEditing(true);
-                            setShowDropdown(false);
-                          }}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                          Edit Notes
-                        </button>
+                        {context !== 'collection' && (
+                          <>
+                            <button
+                              onClick={handleAddToCollection}
+                              className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
+                            >
+                              <FolderPlus className="h-4 w-4" />
+                              Add to Collection
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsEditing(true);
+                                setShowDropdown(false);
+                              }}
+                              className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                              Edit Notes
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={handleShare}
                           className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted"
@@ -412,24 +456,28 @@ export function WishlistCard({
             <ExternalLink className="h-4 w-4" />
             View
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleAddToCollection}
-            className="bg-white/90 text-gray-900 hover:bg-white"
-          >
-            <FolderPlus className="h-4 w-4" />
-            Add
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setIsEditing(true)}
-            className="bg-white/90 text-gray-900 hover:bg-white"
-          >
-            <Edit3 className="h-4 w-4" />
-            Edit
-          </Button>
+          {context !== 'collection' && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddToCollection}
+                className="bg-white/90 text-gray-900 hover:bg-white"
+              >
+                <FolderPlus className="h-4 w-4" />
+                Add
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+                className="bg-white/90 text-gray-900 hover:bg-white"
+              >
+                <Edit3 className="h-4 w-4" />
+                Edit
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Source badge */}

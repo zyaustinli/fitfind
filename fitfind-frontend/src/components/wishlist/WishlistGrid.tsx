@@ -18,6 +18,7 @@ interface WishlistGridProps {
   onLoadMore?: () => void;
   onUpdateItem?: (item: WishlistItemDetailed, updates: { notes?: string; tags?: string[] }) => void;
   onRemoveItem?: (item: WishlistItemDetailed) => void;
+  onRemoveFromDatabase?: (item: WishlistItemDetailed) => void;
   onShareItem?: (item: WishlistItemDetailed) => void;
   onAddToCollection?: (item: WishlistItemDetailed) => void;
   onViewModeChange?: (mode: 'grid' | 'list') => void;
@@ -25,6 +26,7 @@ interface WishlistGridProps {
   className?: string;
   showBulkActions?: boolean;
   itemsPerRow?: number;
+  context?: 'wishlist' | 'collection';
 }
 
 export function WishlistGrid({
@@ -36,13 +38,15 @@ export function WishlistGrid({
   onLoadMore,
   onUpdateItem,
   onRemoveItem,
+  onRemoveFromDatabase,
   onShareItem,
   onAddToCollection,
   onViewModeChange,
   onBulkSelect,
   className,
   showBulkActions = false,
-  itemsPerRow = 4
+  itemsPerRow = 4,
+  context = 'wishlist'
 }: WishlistGridProps) {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
@@ -173,7 +177,7 @@ export function WishlistGrid({
               onClick={() => onViewModeChange('grid')}
               className="h-8 px-3"
             >
-              <Grid className="h-4 w-4" />
+              Grid
             </Button>
             <Button
               variant={!isGridView ? "default" : "ghost"}
@@ -181,7 +185,7 @@ export function WishlistGrid({
               onClick={() => onViewModeChange('list')}
               className="h-8 px-3"
             >
-              <List className="h-4 w-4" />
+              List
             </Button>
           </div>
         )}
@@ -198,6 +202,7 @@ export function WishlistGrid({
             key={item.id}
             item={item}
             onRemove={handleRemoveItem}
+            onRemoveFromDatabase={onRemoveFromDatabase}
             onUpdate={onUpdateItem}
             onShare={onShareItem}
             onAddToCollection={onAddToCollection}
@@ -205,6 +210,7 @@ export function WishlistGrid({
             isSelected={selectedItems.has(item.id)}
             onSelect={handleItemSelect}
             showCheckbox={showBulkActions}
+            context={context}
             className={cn(
               "transition-all duration-200",
               hasSelection && !selectedItems.has(item.id) && "opacity-70"
