@@ -175,9 +175,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       // Filter to only allowed update fields and handle null values
       const allowedUpdates = {
         ...(updates.name !== undefined && { name: updates.name }),
-        ...(updates.description !== undefined && { description: updates.description }),
+        ...(updates.description !== undefined && { description: updates.description || undefined }),
         ...(updates.is_private !== undefined && { is_private: updates.is_private }),
-        ...(updates.cover_image_url !== undefined && { cover_image_url: updates.cover_image_url })
+        ...(updates.cover_image_url !== undefined && { cover_image_url: updates.cover_image_url || undefined })
       };
       
       const response: CollectionResponse = await updateCollection(id, allowedUpdates);
@@ -278,24 +278,33 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
           reset ? response.items : [...prev, ...response.items]
         );
         setCollectionPagination(response.pagination);
+        
+        // Set loading to false AFTER setting the collection data to prevent race condition
+        setLoading({ isLoading: false });
       } else {
+        setLoading({ isLoading: false });
         throw new Error(response.error || 'Failed to fetch items');
       }
     } catch (err) {
       if (!mountedRef.current) return;
       
-      const message = err instanceof Error ? err.message : 'Failed to load items';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
-    } finally {
-      if (mountedRef.current) {
-        setLoading({ isLoading: false });
+      // Set loading to false for error cases
+      setLoading({ isLoading: false });
+      
+      // Check if this is an ApiError with 404 status (collection not found)
+      if (err && typeof err === 'object' && 'status' in err && err.status === 404) {
+        // For 404 errors, we don't set an error state - we let the UI show "Collection Not Found"
+        // The currentCollection will remain null, which will trigger the not found UI
+      } else {
+        // For other errors, set the error state
+        const message = err instanceof Error ? err.message : 'Failed to load items';
+        setError({
+          hasError: true,
+          message,
+          code: undefined
+        });
       }
     }
-  // FIX #4: Update the dependency array to remove the object that causes the loop
   }, [user]);
 
   const addToCollection = useCallback(async (
