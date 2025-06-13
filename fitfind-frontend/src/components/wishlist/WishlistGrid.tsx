@@ -19,6 +19,7 @@ interface WishlistGridProps {
   onUpdateItem?: (item: WishlistItemDetailed, updates: { notes?: string; tags?: string[] }) => void;
   onRemoveItem?: (item: WishlistItemDetailed) => void;
   onRemoveFromDatabase?: (item: WishlistItemDetailed) => void;
+  onResaveItem?: (item: WishlistItemDetailed) => void;
   onShareItem?: (item: WishlistItemDetailed) => void;
   onAddToCollection?: (item: WishlistItemDetailed) => void;
   onViewModeChange?: (mode: 'grid' | 'list') => void;
@@ -27,6 +28,7 @@ interface WishlistGridProps {
   showBulkActions?: boolean;
   itemsPerRow?: number;
   context?: 'wishlist' | 'collection';
+  unsavedItems?: Set<string>;
 }
 
 export function WishlistGrid({
@@ -39,6 +41,7 @@ export function WishlistGrid({
   onUpdateItem,
   onRemoveItem,
   onRemoveFromDatabase,
+  onResaveItem,
   onShareItem,
   onAddToCollection,
   onViewModeChange,
@@ -46,7 +49,8 @@ export function WishlistGrid({
   className,
   showBulkActions = false,
   itemsPerRow = 4,
-  context = 'wishlist'
+  context = 'wishlist',
+  unsavedItems = new Set()
 }: WishlistGridProps) {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
@@ -203,6 +207,7 @@ export function WishlistGrid({
             item={item}
             onRemove={handleRemoveItem}
             onRemoveFromDatabase={onRemoveFromDatabase}
+            onResaveItem={onResaveItem}
             onUpdate={onUpdateItem}
             onShare={onShareItem}
             onAddToCollection={onAddToCollection}
@@ -211,8 +216,9 @@ export function WishlistGrid({
             onSelect={handleItemSelect}
             showCheckbox={showBulkActions}
             context={context}
+            isUnsaved={unsavedItems.has(item.id)}
             className={cn(
-              "transition-all duration-200",
+              "transition-all duration-75",
               hasSelection && !selectedItems.has(item.id) && "opacity-70"
             )}
           />

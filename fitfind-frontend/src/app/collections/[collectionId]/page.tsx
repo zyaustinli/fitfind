@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Edit3, Trash2, Settings, FolderHeart, Share2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCollections } from "@/hooks/useCollections";
-import { removeFromWishlist } from "@/lib/api";
+import { removeFromWishlist, addToWishlist } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -22,6 +22,10 @@ export default function CollectionDetailPage() {
   
   const [showManageModal, setShowManageModal] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  // Track items that have been unsaved but are still visible on the page
+  const [unsavedItems, setUnsavedItems] = useState<Set<string>>(new Set());
+  // Track items that are in the process of being saved/unsaved
+  const [processingItems, setProcessingItems] = useState<Set<string>>(new Set());
 
   const {
     currentCollection,
@@ -78,15 +82,78 @@ export default function CollectionDetailPage() {
   };
 
   const handleRemoveFromDatabase = async (item: WishlistItemDetailed) => {
+    if (processingItems.has(item.id)) return; // Prevent double-clicking
+    
+    // Optimistic update - immediately mark as unsaved
+    setUnsavedItems(prev => new Set(prev).add(item.id));
+    setProcessingItems(prev => new Set(prev).add(item.id));
+    
     try {
-      const response = await removeFromWishlist(item.products.id);
-      if (response.success) {
-        // Mark the item as removed but keep it on the page
-        // You could add a visual indicator here if needed
+      // Use external_id if available, otherwise fall back to internal id
+      const productId = item.products.external_id || item.products.id;
+      const response = await removeFromWishlist(productId);
+      
+      if (!response.success) {
+        // Rollback optimistic update on failure
+        setUnsavedItems(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(item.id);
+          return newSet;
+        });
+        console.error('Failed to remove item from database:', response.error);
+      } else {
         console.log('Item removed from database, but kept on page for potential re-saving');
       }
     } catch (error) {
+      // Rollback optimistic update on error
+      setUnsavedItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
       console.error('Failed to remove item from database:', error);
+    } finally {
+      setProcessingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
+    }
+  };
+
+  const handleResaveItem = async (item: WishlistItemDetailed) => {
+    if (processingItems.has(item.id)) return; // Prevent double-clicking
+    
+    // Optimistic update - immediately mark as saved (remove from unsaved)
+    setUnsavedItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(item.id);
+      return newSet;
+    });
+    setProcessingItems(prev => new Set(prev).add(item.id));
+    
+    try {
+      // Use external_id if available, otherwise fall back to internal id
+      const productId = item.products.external_id || item.products.id;
+      const response = await addToWishlist(productId, item.notes || undefined, item.tags);
+      
+      if (!response.success) {
+        // Rollback optimistic update on failure - mark as unsaved again
+        setUnsavedItems(prev => new Set(prev).add(item.id));
+        console.error('Failed to re-save item to database:', response.error);
+      } else {
+        console.log('Item re-saved to database');
+      }
+    } catch (error) {
+      // Rollback optimistic update on error - mark as unsaved again
+      setUnsavedItems(prev => new Set(prev).add(item.id));
+      console.error('Failed to re-save item to database:', error);
+    } finally {
+      setProcessingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
     }
   };
 
@@ -256,11 +323,13 @@ export default function CollectionDetailPage() {
                 onUpdateItem={handleUpdateItem}
                 onRemoveItem={handleRemoveItem}
                 onRemoveFromDatabase={handleRemoveFromDatabase}
+                onResaveItem={handleResaveItem}
                 onViewModeChange={() => {}}
                 onBulkSelect={() => {}}
                 showBulkActions={false}
                 context="collection"
                 itemsPerRow={4}
+                unsavedItems={unsavedItems}
               />
             )}
           </>
