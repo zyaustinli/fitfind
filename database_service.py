@@ -833,7 +833,6 @@ class DatabaseService:
                            saved_item_id!inner(*, product_id!inner(*))
                        """)
                        .eq("collection_id", collection_id)
-                       .order("position", desc=False)
                        .order("added_at", desc=True)
                        .range(offset, offset + limit - 1)
                        .execute())

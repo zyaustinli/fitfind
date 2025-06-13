@@ -152,6 +152,9 @@ export interface WishlistItemDetailed {
   tags: string[];
   created_at: string;
   products: ProductDetails;
+  // Collection-specific fields (when fetched from a collection)
+  collection_position?: number;
+  added_to_collection_at?: string;
 }
 
 export interface WishlistResponse {

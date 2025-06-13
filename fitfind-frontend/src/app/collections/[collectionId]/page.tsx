@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Edit3, Trash2, Settings, FolderHeart, Share2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCollections } from "@/hooks/useCollections";
+import { removeFromWishlist } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -73,6 +74,19 @@ export default function CollectionDetailPage() {
   const handleRemoveItem = async (item: WishlistItemDetailed) => {
     if (currentCollection) {
       await removeFromCollection(currentCollection.id, item.id);
+    }
+  };
+
+  const handleRemoveFromDatabase = async (item: WishlistItemDetailed) => {
+    try {
+      const response = await removeFromWishlist(item.products.id);
+      if (response.success) {
+        // Mark the item as removed but keep it on the page
+        // You could add a visual indicator here if needed
+        console.log('Item removed from database, but kept on page for potential re-saving');
+      }
+    } catch (error) {
+      console.error('Failed to remove item from database:', error);
     }
   };
 
@@ -174,10 +188,6 @@ export default function CollectionDetailPage() {
                     <span>
                       {collectionItems.length} item{collectionItems.length !== 1 ? 's' : ''}
                     </span>
-                    <span>•</span>
-                    <span>
-                      Created {new Date(currentCollection.created_at).toLocaleDateString()}
-                    </span>
                     {currentCollection.is_private && (
                       <>
                         <span>•</span>
@@ -245,9 +255,11 @@ export default function CollectionDetailPage() {
                 onLoadMore={loadMore}
                 onUpdateItem={handleUpdateItem}
                 onRemoveItem={handleRemoveItem}
+                onRemoveFromDatabase={handleRemoveFromDatabase}
                 onViewModeChange={() => {}}
                 onBulkSelect={() => {}}
                 showBulkActions={false}
+                context="collection"
                 itemsPerRow={4}
               />
             )}

@@ -15,7 +15,7 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
   
   return (
     <Link href={`/collections/${collection.id}`} className={className}>
-      <div className="group relative bg-background/50 border border-border/50 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl cursor-pointer">
+      <div className="group relative bg-background/50 border border-border/50 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl cursor-pointer h-80">
         {/* Cover Image */}
         <div className="aspect-[4/3] bg-gradient-to-br from-primary/10 to-purple-600/10 flex items-center justify-center relative overflow-hidden">
           {collection.cover_image_url ? (
@@ -50,25 +50,15 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
         </div>
 
         {/* Content */}
-        <div className="p-4">
+        <div className="p-4 flex-1 flex flex-col">
           <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors line-clamp-1">
             {collection.name}
           </h3>
           {collection.description && (
-            <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
+            <p className="text-muted-foreground text-sm line-clamp-2 flex-1">
               {collection.description}
             </p>
           )}
-          
-          {/* Metadata */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              Created {new Date(collection.created_at).toLocaleDateString()}
-            </span>
-            <span>
-              Updated {new Date(collection.updated_at).toLocaleDateString()}
-            </span>
-          </div>
         </div>
 
         {/* Hover Indicator */}

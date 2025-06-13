@@ -380,9 +380,9 @@ export default function HistoryPage() {
 
   return (
     <>
-      <div className="h-full bg-gradient-to-br from-muted/30 to-primary/5">
-        <div className="h-full p-8">
-          <div className="max-w-7xl mx-auto h-full flex flex-col">
+      <div className="min-h-full bg-gradient-to-br from-muted/30 to-primary/5">
+        <div className="min-h-full p-8">
+          <div className="max-w-7xl mx-auto flex flex-col">
             
             {/* Header with network status */}
             <div className="mb-8">
@@ -514,7 +514,7 @@ export default function HistoryPage() {
 
             {/* Search history grid */}
             {filteredHistory.length > 0 && (
-              <div className="space-y-6 flex-1">
+              <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filteredHistory.map((item) => (
                     <SearchHistoryCard
