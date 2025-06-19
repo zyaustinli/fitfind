@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderHeart, Lock } from "lucide-react";
+import { FolderHeart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Collection } from "@/types";
 
@@ -38,15 +38,7 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
             </Badge>
           </div>
 
-          {/* Private Badge */}
-          {collection.is_private && (
-            <div className="absolute top-3 left-3">
-              <Badge variant="outline" className="bg-background/80 backdrop-blur-sm border-amber-400/40 text-amber-600">
-                <Lock className="w-3 h-3 mr-1" />
-                Private
-              </Badge>
-            </div>
-          )}
+
         </div>
 
         {/* Content */}

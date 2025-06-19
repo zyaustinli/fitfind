@@ -159,15 +159,6 @@ export function WishlistCard({
     onSelect?.(item, checked);
   };
 
-  const calculateDiscount = () => {
-    if (product.old_price && product.price && product.old_price > product.price) {
-      return Math.round(((product.old_price - product.price) / product.old_price) * 100);
-    }
-    return null;
-  };
-
-  const discount = calculateDiscount();
-
   if (viewMode === 'list') {
     return (
       <div className={cn(
@@ -317,24 +308,14 @@ export function WishlistCard({
 
           {/* Price */}
           <div className="flex items-center gap-2 mt-2">
-            {product.price ? (
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-foreground">
-                  {formatPrice(product.price)}
-                </span>
-                {product.old_price && product.old_price > product.price && (
-                  <>
-                    <span className="text-sm text-muted-foreground line-through">
-                      {formatPrice(product.old_price)}
-                    </span>
-                    {discount && (
-                      <Badge variant="destructive" className="text-xs">
-                        -{discount}%
-                      </Badge>
-                    )}
-                  </>
-                )}
-              </div>
+            {product.old_price ? (
+              <span className="text-lg font-bold text-foreground">
+                {formatPrice(product.old_price)}
+              </span>
+            ) : product.price ? (
+              <span className="text-lg font-bold text-foreground">
+                {formatPrice(product.price)}
+              </span>
             ) : (
               <span className="text-sm text-muted-foreground">Price unavailable</span>
             )}
@@ -473,15 +454,6 @@ export function WishlistCard({
             </span>
           </div>
         )}
-
-        {/* Discount badge */}
-        {discount && (
-          <div className="absolute bottom-2 left-2">
-            <Badge variant="destructive" className="text-xs">
-              -{discount}%
-            </Badge>
-          </div>
-        )}
       </div>
 
       {/* Content Section */}
@@ -496,17 +468,14 @@ export function WishlistCard({
         {/* Price */}
         <div className="flex items-center justify-between">
           <div>
-            {product.price ? (
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-foreground">
-                  {formatPrice(product.price)}
-                </span>
-                {product.old_price && product.old_price > product.price && (
-                  <span className="text-sm text-muted-foreground line-through">
-                    {formatPrice(product.old_price)}
-                  </span>
-                )}
-              </div>
+            {product.old_price ? (
+              <span className="text-lg font-bold text-foreground">
+                {formatPrice(product.old_price)}
+              </span>
+            ) : product.price ? (
+              <span className="text-lg font-bold text-foreground">
+                {formatPrice(product.price)}
+              </span>
             ) : (
               <span className="text-sm text-muted-foreground">Price unavailable</span>
             )}

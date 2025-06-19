@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp, Plus, FolderHeart } from "lucide-react";
+import { Heart, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp, Plus, FolderHeart } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCollections } from "@/hooks/useCollections";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -128,9 +128,15 @@ export default function CollectionsPage() {
     );
   }
 
-  const handleCreateCollection = async (name: string, description?: string, isPrivate?: boolean): Promise<boolean> => {
-    const newCollection = await createNewCollection(name, description, isPrivate);
-    return !!newCollection;
+  const handleCreateCollection = async (name: string, description?: string, isPrivate?: boolean): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const newCollection = await createNewCollection(name, description, false);
+      return { success: true };
+    } catch (err) {
+      // Return the specific error message from the API
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create collection. Please try again.';
+      return { success: false, error: errorMessage };
+    }
   };
 
   return (

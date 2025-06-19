@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { Grid, List, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WishlistCard } from "./WishlistCard";
@@ -22,7 +22,7 @@ interface WishlistGridProps {
   onResaveItem?: (item: WishlistItemDetailed) => void;
   onShareItem?: (item: WishlistItemDetailed) => void;
   onAddToCollection?: (item: WishlistItemDetailed) => void;
-  onViewModeChange?: (mode: 'grid' | 'list') => void;
+
   onBulkSelect?: (items: WishlistItemDetailed[]) => void;
   className?: string;
   showBulkActions?: boolean;
@@ -44,7 +44,6 @@ export function WishlistGrid({
   onResaveItem,
   onShareItem,
   onAddToCollection,
-  onViewModeChange,
   onBulkSelect,
   className,
   showBulkActions = false,
@@ -116,7 +115,7 @@ export function WishlistGrid({
 
   // Show loading state for initial load
   if (loading && items.length === 0) {
-    return <WishlistLoading viewMode={filters.viewMode} />;
+    return <WishlistLoading viewMode="grid" />;
   }
 
   // Show error state
@@ -141,7 +140,6 @@ export function WishlistGrid({
     return <WishlistEmpty />;
   }
 
-  const isGridView = filters.viewMode === 'grid';
   const hasSelection = selectedItems.size > 0;
 
   return (
@@ -172,35 +170,11 @@ export function WishlistGrid({
           )}
         </div>
 
-        {/* View mode toggle */}
-        {onViewModeChange && (
-          <div className="flex items-center border border-border rounded-lg p-1">
-            <Button
-              variant={isGridView ? "default" : "ghost"}
-              size="sm"
-              onClick={() => onViewModeChange('grid')}
-              className="h-8 px-3"
-            >
-              Grid
-            </Button>
-            <Button
-              variant={!isGridView ? "default" : "ghost"}
-              size="sm"
-              onClick={() => onViewModeChange('list')}
-              className="h-8 px-3"
-            >
-              List
-            </Button>
-          </div>
-        )}
+
       </div>
 
-      {/* Items grid/list */}
-      <div className={cn(
-        isGridView 
-          ? `grid gap-4 ${gridCols}`
-          : "space-y-3"
-      )}>
+      {/* Items grid */}
+      <div className={cn(`grid gap-4 ${gridCols}`)}>
         {items.map((item) => (
           <WishlistCard
             key={item.id}
@@ -211,7 +185,7 @@ export function WishlistGrid({
             onUpdate={onUpdateItem}
             onShare={onShareItem}
             onAddToCollection={onAddToCollection}
-            viewMode={filters.viewMode}
+            viewMode="grid"
             isSelected={selectedItems.has(item.id)}
             onSelect={handleItemSelect}
             showCheckbox={showBulkActions}
