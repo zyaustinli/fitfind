@@ -145,6 +145,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   ): Promise<Collection | null> => {
     if (!user) return null;
 
+    // Clear any existing errors when starting a new collection creation
+    clearError();
+
     try {
       const response: CollectionResponse = await createCollection(name, { description, is_private: isPrivate });
       
@@ -152,18 +155,15 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         setCollections(prev => [...prev, response.collection!]);
         return response.collection;
       } else {
+        // Throw the error so it can be caught by the calling function
+        // but don't set the hook's error state
         throw new Error(response.error || 'Failed to create collection');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create collection';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
-      return null;
+      // Re-throw the error so the calling function can handle it
+      throw err;
     }
-  }, [user]);
+  }, [user, clearError]);
 
   const updateExistingCollection = useCallback(async (
     id: string,

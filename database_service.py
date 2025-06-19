@@ -326,15 +326,31 @@ class DatabaseService:
             return None
     
     def remove_from_wishlist(self, user_id: str, product_id: str) -> bool:
-        """Remove item from user's wishlist using external product ID"""
+        """Remove item from user's wishlist using either the internal product UUID or the external ID"""
         try:
-            # Find the internal product UUID from the external ID
-            product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
-            if not product_response.data:
-                logger.warning(f"Product not found for removal with external_id: {product_id}")
-                return False
+            internal_product_uuid = None
 
-            internal_product_uuid = product_response.data[0]['id']
+            # The frontend might send an internal UUID from collection/history pages,
+            # or an external_id from the main search page. We handle both.
+            if self._is_valid_uuid(product_id):
+                # If it looks like a UUID, assume it's the internal `id`.
+                product_response = self.service_client.table("products").select("id").eq("id", product_id).limit(1).execute()
+                if product_response.data:
+                    internal_product_uuid = product_response.data[0]['id']
+                else:
+                    # Fallback: It's a UUID but not an internal one, so it must be an external_id.
+                    product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+                    if product_response.data:
+                        internal_product_uuid = product_response.data[0]['id']
+            else:
+                # If not a UUID, it must be an `external_id`.
+                product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+                if product_response.data:
+                    internal_product_uuid = product_response.data[0]['id']
+
+            if not internal_product_uuid:
+                logger.warning(f"Product not found for removal with provided ID: {product_id}")
+                return False
 
             response = (self.service_client.table("user_saved_items")
                        .delete()
@@ -385,14 +401,30 @@ class DatabaseService:
             return False
     
     def is_item_in_wishlist(self, user_id: str, product_id: str) -> bool:
-        """Check if item is in user's wishlist using external product ID"""
+        """Check if item is in user's wishlist using either the internal product UUID or the external ID"""
         try:
-            # Find the internal product UUID from the external ID
-            product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
-            if not product_response.data:
-                return False # Product doesn't exist
+            internal_product_uuid = None
 
-            internal_product_uuid = product_response.data[0]['id']
+            # The frontend might send an internal UUID from collection/history pages,
+            # or an external_id from the main search page. We handle both.
+            if self._is_valid_uuid(product_id):
+                # If it looks like a UUID, assume it's the internal `id`.
+                product_response = self.service_client.table("products").select("id").eq("id", product_id).limit(1).execute()
+                if product_response.data:
+                    internal_product_uuid = product_response.data[0]['id']
+                else:
+                    # Fallback: It's a UUID but not an internal one, so it must be an external_id.
+                    product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+                    if product_response.data:
+                        internal_product_uuid = product_response.data[0]['id']
+            else:
+                # If not a UUID, it must be an `external_id`.
+                product_response = self.service_client.table("products").select("id").eq("external_id", product_id).limit(1).execute()
+                if product_response.data:
+                    internal_product_uuid = product_response.data[0]['id']
+
+            if not internal_product_uuid:
+                return False # Product doesn't exist
 
             response = (self.service_client.table("user_saved_items")
                        .select("id")
