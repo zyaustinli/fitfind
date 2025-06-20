@@ -1421,6 +1421,65 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     return result
 
 
+def test_search_shopping_item(query, country="us", language="en", save_to_file=True):
+    """
+    Search for a clothing item using SerpAPI's Google Shopping API
+    
+    Parameters:
+    - query: The search query string
+    - country: Two-letter country code (default: "us")
+    - language: Language code (default: "en")
+    - save_to_file: Whether to save results to JSON file (default: True)
+    
+    Returns:
+    - Dictionary containing search results
+    """
+    if not SERPAPI_KEY:
+        return {"error": "SERPAPI_API_KEY not set in environment variables"}
+    
+    params = {
+        "engine": "google_shopping",
+        "q": query,
+        "api_key": SERPAPI_KEY,
+        "gl": country,
+        "hl": language,
+        "direct_link": True
+    }
+    
+    
+    try:
+        search = SerpAPISearch(params)
+        results = search.get_dict()
+        print(f"Search completed for query: {query}")
+        
+        # Add query metadata to results
+        results["original_query"] = query
+        
+        # Save to JSON file if requested
+        if save_to_file:
+            # Create a safe filename from the query
+            safe_query = re.sub(r'[^\w\s-]', '', query).strip()
+            safe_query = re.sub(r'[-\s]+', '_', safe_query)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"test_search_{safe_query}_{timestamp}.json"
+            
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(results, f, indent=2, ensure_ascii=False)
+                print(f"Results saved to: {filename}")
+                results["saved_to_file"] = filename
+            except Exception as e:
+                print(f"Error saving to file: {str(e)}")
+                results["file_save_error"] = str(e)
+        
+        return results
+    except Exception as e:
+        return {
+            "error": f"Error in search_shopping_item: {str(e)}",
+            "original_query": query
+        }
+    
+
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs, unquote
@@ -1510,23 +1569,41 @@ def extract_actual_url(google_redirect_url):
         print(f"Error extracting URL from: {google_redirect_url} - {e}")
         return None
 
-# Example usage (commented out)
-# if __name__ == "__main__":
-#     # Basic usage
-#     result = outfit_recommendation("path/to/outfit_image.jpg")
-#     print(result)
-#     
-#     # Usage with redo capability
-#     result_with_redo = outfit_recommendation_with_redo(
-#         "path/to/outfit_image.jpg", 
-#         enable_redo=True
-#     )
-#     
-#     # If you want to redo the search queries
-#     if "conversation_context" in result_with_redo:
-#         redo_result = redo_search_queries(
-#             result_with_redo["conversation_context"],
-#             feedback_message="Please focus more on specific brand styles and materials"
-#         )
-#         print("New queries:", redo_result.get("queries", []))
+def scrape_multiple_urls(google_urls, delay=1):
+    """
+    Scrape multiple Google Shopping URLs efficiently.
+    
+    Args:
+        google_urls (list): List of Google Shopping URLs
+        delay (float): Delay between requests in seconds
+    
+    Returns:
+        dict: Dictionary with input URL as key and list of retailer URLs as value
+    """
+    results = {}
+    
+    for i, url in enumerate(google_urls):
+        print(f"Processing URL {i+1}/{len(google_urls)}: {url[:60]}...")
+        retailer_urls = extract_retailer_urls(url, delay)
+        results[url] = retailer_urls
+        print(f"Found {len(retailer_urls)} retailer URLs")
+    
+    return results
+
+# Example usage
+if __name__ == "__main__":
+    # Replace with your Google Shopping product URL
+    google_shopping_url = "https://www.google.com/shopping/product/17728085217738913104?gl=us"
+    
+    print("Extracting retailer URLs...")
+    urls = extract_retailer_urls(google_shopping_url)
+    
+    print(f"\nFound {len(urls)} retailer URLs:")
+    for i, url in enumerate(urls, 1):
+        print(f"{i}. {url}")
+    
+    # Return in the requested format
+    print(f"\nFormatted output: {urls}")
+
+
 
