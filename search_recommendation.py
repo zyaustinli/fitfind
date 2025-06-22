@@ -1759,7 +1759,25 @@ def parallel_scrape_google_products(urls, delay=0, max_workers=20, max_retries=2
         print("🎉 No rate limiting detected - you might be able to push harder!")
     
     return results
+def _extract_retailer_name_from_url(url: str) -> str:
+    """
+    Extract a clean retailer name from a URL.
+    """
+    try:
+        domain = urlparse(url).netloc.lower().replace('www.', '')
+        # Capitalize the first part of the domain for a clean name
+        return domain.split('.')[0].capitalize()
+    except Exception:
+        return "Unknown"
 
+def _extract_retailer_domain_local(url: str) -> str:
+    """
+    Extract the domain from a URL.
+    """
+    try:
+        return urlparse(url).netloc.replace('www.', '')
+    except:
+        return ""
 
 def extract_direct_links_for_products(cleaned_data, progress_callback=None, max_workers=20, delay=0):
     """
@@ -1872,23 +1890,34 @@ def extract_direct_links_for_products(cleaned_data, progress_callback=None, max_
     print(f"🔍 [DEBUG] Applying extracted links to products...")
     
     for url, retailer_urls in scraping_results.get("successful", {}).items():
-        print(f"   ✅ URL: {url[:60]}... → {len(retailer_urls)} links")
         if url in url_to_product_mapping:
+            # Create a list of objects that match the frontend's DirectLink type
+            direct_links_objects = [
+                {
+                    "id": f"dl_live_{i}", # Temporary ID for frontend keys
+                    "retailer_url": retailer_url,
+                    "retailer_name": _extract_retailer_name_from_url(retailer_url),
+                    "retailer_domain": _extract_retailer_domain_local(retailer_url),
+                    "is_active": True,
+                    "created_at": datetime.now().isoformat()
+                }
+                for i, retailer_url in enumerate(retailer_urls)
+            ]
+
+            # Assign the list of objects to all products that came from this Google URL
             for product in url_to_product_mapping[url]:
-                product["direct_links"] = retailer_urls
-                products_enhanced += 1
-                total_links_found += len(retailer_urls)
+                product["direct_links"] = direct_links_objects
                 print(f"      📦 Enhanced product: {product.get('title', 'Unknown')[:40]}...")
-    
-    # For failed extractions, set empty direct_links array
+
+    # For failed extractions, ensure the direct_links key is an empty array
     for url, error in scraping_results.get("failed", {}).items():
         print(f"   ❌ URL: {url[:60]}... → Failed: {error}")
         if url in url_to_product_mapping:
             for product in url_to_product_mapping[url]:
                 product["direct_links"] = []
-                products_enhanced += 1
                 print(f"      📦 Set empty links for: {product.get('title', 'Unknown')[:40]}...")
-    
+
+
     print(f"🔍 [DEBUG] Link application complete:")
     print(f"   📦 Products enhanced: {products_enhanced}")
     print(f"   🔗 Total links found: {total_links_found}")

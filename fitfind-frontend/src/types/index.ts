@@ -438,6 +438,7 @@ export interface CollectionOperationResponse {
 // Direct Links Types
 export interface DirectLink {
   id: string;
+  retailer_name: string;
   retailer_url: string;
   retailer_domain: string;
   is_active: boolean;
