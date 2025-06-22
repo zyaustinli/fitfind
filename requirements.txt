@@ -12,6 +12,11 @@ requests==2.31.0
 # Additional dependencies that might be needed
 Pillow==10.1.0
 
+# Web scraping dependencies
+beautifulsoup4==4.12.2
+lxml==4.9.3
+urllib3==1.26.18
+
 # Database dependencies (using more flexible versioning)
 supabase>=2.7.0,<3.0.0
 pyjwt>=2.8.0,<3.0.0

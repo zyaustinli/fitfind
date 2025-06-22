@@ -1,0 +1,21 @@
+{
+  "successful": {
+    "https://www.google.com/shopping/product/3356952053188629036?gl=us": [
+      "https://www.chicwish.com/check-pattern-v-neck-button-down-cardigan-in-camel.html?srsltid=AfmBOopjBgBQs6l9mgWNAipynSBbvxZOnAZJT2l72LDV6704Dah8c9lNXqw"
+    ]
+  },
+  "failed": {},
+  "stats": {
+    "total_urls": 1,
+    "successful_count": 1,
+    "failed_count": 0,
+    "start_time": "2025-06-21T09:49:30.522752",
+    "rate_limit_hits": 0,
+    "total_requests": 1,
+    "max_workers": 20,
+    "base_delay": 0,
+    "end_time": "2025-06-21T09:49:30.927766",
+    "total_duration": 0.40441322326660156,
+    "avg_requests_per_second": 2.4727183545647056
+  }
+}

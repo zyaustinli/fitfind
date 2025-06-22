@@ -784,6 +784,13 @@ def upload_file():
             
             # Process the outfit image (using temporary local file)
             print(f"Processing outfit image: {temp_file_path}")
+            
+            # Progress tracking for client updates (could be enhanced with WebSockets)
+            progress_messages = []
+            def progress_callback(message):
+                progress_messages.append(message)
+                print(f"🔄 Progress: {message}")
+            
             result = outfit_recommendation_with_cleaned_data(
                 image_path=temp_file_path,
                 country=country,
@@ -791,7 +798,9 @@ def upload_file():
                 output_path=f"{base_output_path}.csv",
                 enable_redo=True,
                 save_raw_json=True,
-                save_cleaned_json=True
+                save_cleaned_json=True,
+                extract_direct_links=True,  # Enable direct link extraction
+                progress_callback=progress_callback
             )
             
             # <<<--- ADD THIS DEBUGGING BLOCK --- START --->>>
@@ -863,6 +872,52 @@ def upload_file():
                     if not success:
                         print(f"WARNING: Failed to save clothing items for session {session_record['id']}")
                         # Log but don't fail the request since we have the data
+                    else:
+                        # Save direct links to database if extraction was successful
+                        cleaned_data = result.get('cleaned_data', {})
+                        direct_links_extracted = result.get('direct_links_extracted', False)
+                        
+                        print(f"🔗 [DEBUG] Direct links extraction status: {direct_links_extracted}")
+                        print(f"🔗 [DEBUG] Cleaned data has {len(cleaned_data.get('clothing_items', []))} clothing items")
+                        
+                        # Count products with direct_links for debugging
+                        total_products_in_cleaned_data = 0
+                        products_with_direct_links = 0
+                        for item in cleaned_data.get('clothing_items', []):
+                            for product in item.get('products', []):
+                                total_products_in_cleaned_data += 1
+                                if product.get('direct_links'):
+                                    products_with_direct_links += 1
+                        
+                        print(f"🔗 [DEBUG] Cleaned data analysis:")
+                        print(f"   📊 Total products: {total_products_in_cleaned_data}")
+                        print(f"   🔗 Products with direct_links: {products_with_direct_links}")
+                        
+                        if direct_links_extracted:
+                            print("🔗 Saving direct links to database...")
+                            from search_recommendation import save_direct_links_to_database
+                            
+                            try:
+                                link_stats = save_direct_links_to_database(
+                                    cleaned_data=cleaned_data,
+                                    session_id=session_record['id']
+                                )
+                                
+                                if "error" in link_stats:
+                                    print(f"⚠️ Warning: Failed to save direct links: {link_stats['error']}")
+                                else:
+                                    print(f"✅ Successfully saved {link_stats.get('links_saved', 0)} direct links for {link_stats.get('products_processed', 0)} products")
+                            except Exception as e:
+                                print(f"❌ Exception while saving direct links: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            print("⚠️ Direct links not extracted, skipping database save")
+                            # Show why extraction might have failed
+                            if total_products_in_cleaned_data == 0:
+                                print("   🔍 Reason: No products found in cleaned data")
+                            elif products_with_direct_links == 0:
+                                print("   🔍 Reason: Products exist but no direct_links field found")
             
             # Prepare conversation context for JSON serialization
             conversation_context = result.get('conversation_context')
@@ -885,7 +940,11 @@ def upload_file():
                     'csv_file': result.get('results_saved_to'),
                     'raw_json_file': result.get('raw_results_saved_to'),
                     'cleaned_json_file': result.get('cleaned_results_saved_to')
-                }
+                },
+                # Direct links extraction metadata
+                'direct_links_extracted': result.get('direct_links_extracted', False),
+                'direct_links_extraction_time': result.get('direct_links_extraction_time'),
+                'progress_messages': progress_messages  # For debugging/analytics
             }
             
             print(f"Successfully processed outfit. Found {result.get('num_products_found', 0)} products.")
@@ -952,7 +1011,7 @@ def redo_search():
             return jsonify({'error': 'Failed to generate new search queries'}), 500
         
         # Perform new search with updated queries
-        from search_recommendation import search_items_parallel, clean_search_results_for_frontend
+        from search_recommendation import search_items_parallel, clean_search_results_for_frontend, extract_direct_links_for_products
         
         country = data.get('country', 'us')
         language = data.get('language', 'en')
@@ -962,6 +1021,19 @@ def redo_search():
         
         # Clean the results
         cleaned_data = clean_search_results_for_frontend(search_results)
+        
+        # Extract direct links for redo search
+        try:
+            cleaned_data = extract_direct_links_for_products(
+                cleaned_data=cleaned_data,
+                progress_callback=lambda msg: print(f"🔄 Redo: {msg}"),
+                max_workers=20,
+                delay=0
+            )
+            direct_links_extracted = True
+        except Exception as e:
+            print(f"⚠️ Warning: Direct link extraction failed in redo: {e}")
+            direct_links_extracted = False
         
         # Update database session if user is authenticated and session_id provided
         if user_id and session_id:
@@ -977,6 +1049,22 @@ def redo_search():
                     'conversation_context': conversation_context_for_db
                 }
                 db_service.update_search_session(session_id, session_updates)
+                
+                # Save clothing items and direct links for redo
+                clothing_items = cleaned_data.get('clothing_items', [])
+                if clothing_items:
+                    # Clear existing items for this session (redo replaces previous results)
+                    # This is a simplified approach - you might want more sophisticated handling
+                    success = db_service.save_clothing_items(session_id, clothing_items)
+                    
+                    if success and direct_links_extracted:
+                        from search_recommendation import save_direct_links_to_database
+                        link_stats = save_direct_links_to_database(
+                            cleaned_data=cleaned_data,
+                            session_id=session_id
+                        )
+                        if "error" not in link_stats:
+                            print(f"✅ Redo: Saved {link_stats.get('links_saved', 0)} direct links")
                 logger.info(f"Updated search session {session_id} for user {user_id}")
                 
                 # Save new clothing items and products
@@ -1003,7 +1091,8 @@ def redo_search():
             'new_queries': new_queries,
             'cleaned_data': cleaned_data,
             'conversation_context': updated_conversation_context,  # Updated conversation context
-            'feedback_used': redo_result.get('feedback_used')
+            'feedback_used': redo_result.get('feedback_used'),
+            'direct_links_extracted': direct_links_extracted
         }
         
         return jsonify(response_data)

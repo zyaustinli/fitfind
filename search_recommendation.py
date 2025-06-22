@@ -14,7 +14,15 @@ from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 from serpapi.google_search import GoogleSearch as SerpAPISearch
 import requests
-
+    
+import time
+import random
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, parse_qs, unquote
+from datetime import datetime
+import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -1361,9 +1369,9 @@ def save_cleaned_results_to_json(cleaned_data, output_path=None):
 
 
 # Enhanced version of outfit_recommendation that includes cleaned data
-def outfit_recommendation_with_cleaned_data(image_path, country="us", language="en", output_path=None, enable_redo=False, save_raw_json=True, save_cleaned_json=True):
+def outfit_recommendation_with_cleaned_data(image_path, country="us", language="en", output_path=None, enable_redo=False, save_raw_json=True, save_cleaned_json=True, extract_direct_links=True, progress_callback=None):
     """
-    Enhanced version that returns both raw and cleaned data for frontend use
+    Enhanced version that returns both raw and cleaned data for frontend use with direct link extraction
     
     Parameters:
     - image_path: Path to the outfit image
@@ -1373,10 +1381,21 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     - enable_redo: If True, returns conversation context for potential redo
     - save_raw_json: If True, saves complete raw SerpAPI responses as JSON
     - save_cleaned_json: If True, saves cleaned data optimized for frontend
+    - extract_direct_links: If True, extracts direct retailer links from Google Shopping URLs
+    - progress_callback: Optional callback function for progress updates
     
     Returns:
     - Dictionary containing results, cleaned data, and optionally conversation context
     """
+    
+    # Progress tracking
+    def update_progress(message):
+        if progress_callback:
+            progress_callback(message)
+        print(f"🔄 {message}")
+    
+    update_progress("Identifying clothing items...")
+    
     # Get the base result from the existing function
     result = outfit_recommendation_with_redo(
         image_path=image_path,
@@ -1391,9 +1410,39 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     if "error" in result:
         return result
     
+    update_progress("Cleaning and organizing search results...")
+    
     # Clean the raw search results for frontend
     raw_results = result.get("raw_results_data", [])
     cleaned_data = clean_search_results_for_frontend(raw_results)
+    
+    # Extract direct links if requested
+    if extract_direct_links and cleaned_data.get("clothing_items"):
+        update_progress("Extracting direct retailer links...")
+        
+        try:
+            # Extract direct links with progress updates
+            cleaned_data = extract_direct_links_for_products(
+                cleaned_data=cleaned_data,
+                progress_callback=update_progress,
+                max_workers=20,  # Optimized for speed
+                delay=0  # Maximum speed as requested
+            )
+            
+            # Add extraction metadata to result
+            result["direct_links_extracted"] = True
+            result["direct_links_extraction_time"] = datetime.now().isoformat()
+            
+        except Exception as e:
+            print(f"⚠️ Warning: Direct link extraction failed: {e}")
+            result["direct_links_extracted"] = False
+            result["direct_links_error"] = str(e)
+            update_progress("Direct link extraction failed, continuing without direct links...")
+    else:
+        result["direct_links_extracted"] = False
+        result["direct_links_reason"] = "Disabled or no products found"
+    
+    update_progress("Finalizing results...")
     
     # Save cleaned data if requested
     cleaned_json_path = None
@@ -1418,13 +1467,10 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     if cleaned_json_path:
         result["cleaned_results_saved_to"] = cleaned_json_path
     
+    update_progress("Search and extraction complete!")
+    
     return result
 
-
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urlparse, parse_qs, unquote
-import time
 
 def extract_retailer_urls(google_url, delay=0):
     """
@@ -1432,7 +1478,7 @@ def extract_retailer_urls(google_url, delay=0):
     
     Args:
         google_url (str): The Google Shopping product URL
-        delay (float): Delay between requests in seconds (default: 1)
+        delay (float): Delay between requests in seconds (default: 0)
     
     Returns:
         list: List of retailer URLs
@@ -1444,7 +1490,8 @@ def extract_retailer_urls(google_url, delay=0):
     
     try:
         # Add delay to be respectful to the server
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
         
         # Send GET request
         response = requests.get(google_url, headers=headers)
@@ -1509,6 +1556,459 @@ def extract_actual_url(google_redirect_url):
     except Exception as e:
         print(f"Error extracting URL from: {google_redirect_url} - {e}")
         return None
+
+def scrape_single_url(args):
+    """
+    Scrape a single URL with retry logic. Designed for parallel execution.
+    
+    Args:
+        args (tuple): (url, delay, max_retries, backoff_factor, thread_id)
+    
+    Returns:
+        dict: Result containing success/failure info
+    """
+    url, delay, max_retries, backoff_factor, thread_id = args
+    
+    result = {
+        'url': url,
+        'thread_id': thread_id,
+        'success': False,
+        'retailer_urls': [],
+        'error': None,
+        'attempts': 0,
+        'rate_limited': False,
+        'start_time': time.time()
+    }
+    
+    current_delay = delay
+    
+    for attempt in range(max_retries + 1):
+        result['attempts'] = attempt + 1
+        
+        try:
+            print(f"[Thread {thread_id}] Attempt {attempt + 1} for {url[:50]}...")
+            
+            retailer_urls = extract_retailer_urls(url, delay=current_delay)
+            
+            if retailer_urls:
+                result['success'] = True
+                result['retailer_urls'] = retailer_urls
+                result['end_time'] = time.time()
+                print(f"[Thread {thread_id}] ✓ Success: Found {len(retailer_urls)} retailer URLs")
+                break
+            else:
+                if attempt < max_retries:
+                    current_delay *= backoff_factor
+                    print(f"[Thread {thread_id}] ⚠ No results, retrying with {current_delay:.2f}s delay...")
+                    time.sleep(current_delay)
+                else:
+                    result['error'] = "No retailer URLs found after all retries"
+                    print(f"[Thread {thread_id}] ✗ Failed: No results after {max_retries + 1} attempts")
+                        
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Rate limited
+                result['rate_limited'] = True
+                if attempt < max_retries:
+                    current_delay *= backoff_factor
+                    print(f"[Thread {thread_id}] ⚠ Rate limited (429). Backing off for {current_delay:.2f}s...")
+                    time.sleep(current_delay)
+                else:
+                    result['error'] = f"Rate limited after {max_retries + 1} attempts"
+                    print(f"[Thread {thread_id}] ✗ Failed: Rate limited, max retries reached")
+                    break
+            else:
+                result['error'] = f"HTTP Error: {e}"
+                print(f"[Thread {thread_id}] ✗ Failed: HTTP Error {e}")
+                break
+                
+        except Exception as e:
+            result['error'] = f"Unexpected error: {e}"
+            print(f"[Thread {thread_id}] ✗ Failed: {e}")
+            break
+    
+    result['end_time'] = time.time()
+    result['duration'] = result['end_time'] - result['start_time']
+    return result
+
+def parallel_scrape_google_products(urls, delay=0, max_workers=20, max_retries=2, 
+                                   backoff_factor=2.0, save_progress=True, 
+                                   progress_file="parallel_scraping_progress.json"):
+    """
+    Scrape multiple Google Shopping product pages in parallel.
+    
+    Args:
+        urls (list): List of Google Shopping product URLs
+        delay (float): Base delay between requests in seconds (default: 0)
+        max_workers (int): Maximum number of parallel threads (default: 10)
+        max_retries (int): Maximum number of retries for failed requests
+        backoff_factor (float): Multiplier for exponential backoff
+        save_progress (bool): Save progress to file
+        progress_file (str): File to save progress to
+    
+    Returns:
+        dict: Results with URLs as keys and retailer URLs as values, plus metadata
+    """
+    
+    # Thread-safe lock for shared data
+    lock = threading.Lock()
+    
+    results = {
+        'successful': {},
+        'failed': {},
+        'stats': {
+            'total_urls': len(urls),
+            'successful_count': 0,
+            'failed_count': 0,
+            'start_time': datetime.now().isoformat(),
+            'rate_limit_hits': 0,
+            'total_requests': 0,
+            'max_workers': max_workers,
+            'base_delay': delay
+        }
+    }
+    
+    print(f"🚀 Starting PARALLEL scraping of {len(urls)} URLs...")
+    print(f"⚡ Max workers: {max_workers}, Base delay: {delay}s, Max retries: {max_retries}")
+    print("⚠️  WARNING: Parallel processing with 0 delay will likely trigger rate limits quickly!")
+    print("-" * 80)
+    
+    # Prepare arguments for parallel execution
+    worker_args = [(url, delay, max_retries, backoff_factor, i) 
+                   for i, url in enumerate(urls)]
+    
+    completed_count = 0
+    start_time = time.time()
+    
+    # Execute in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_url = {executor.submit(scrape_single_url, args): args[0] 
+                        for args in worker_args}
+        
+        # Process completed tasks as they finish
+        for future in as_completed(future_to_url):
+            with lock:  # Thread-safe access to shared results
+                result = future.result()
+                completed_count += 1
+                
+                results['stats']['total_requests'] += result['attempts']
+                
+                if result['success']:
+                    results['successful'][result['url']] = result['retailer_urls']
+                    results['stats']['successful_count'] += 1
+                else:
+                    results['failed'][result['url']] = result['error']
+                    results['stats']['failed_count'] += 1
+                
+                if result['rate_limited']:
+                    results['stats']['rate_limit_hits'] += 1
+                
+                # Print progress update
+                elapsed = time.time() - start_time
+                progress_pct = (completed_count / len(urls)) * 100
+                success_rate = (results['stats']['successful_count'] / completed_count) * 100
+                
+                print(f"[{completed_count}/{len(urls)}] ({progress_pct:.1f}%) "
+                      f"Success: {success_rate:.1f}% | "
+                      f"Rate limits: {results['stats']['rate_limit_hits']} | "
+                      f"Elapsed: {elapsed:.1f}s")
+                
+                # Save progress periodically (every 10 completions)
+                if save_progress and completed_count % 10 == 0:
+                    try:
+                        with open(progress_file, 'w') as f:
+                            json.dump(results, f, indent=2)
+                        print(f"📁 Progress saved to {progress_file}")
+                    except Exception as e:
+                        print(f"❌ Error saving progress: {e}")
+    
+    # Calculate final stats
+    total_time = time.time() - start_time
+    results['stats']['end_time'] = datetime.now().isoformat()
+    results['stats']['total_duration'] = total_time
+    results['stats']['avg_requests_per_second'] = results['stats']['total_requests'] / total_time if total_time > 0 else 0
+    
+    # Final save
+    if save_progress:
+        try:
+            with open(progress_file, 'w') as f:
+                json.dump(results, f, indent=2)
+            print(f"💾 Final results saved to {progress_file}")
+        except Exception as e:
+            print(f"❌ Error saving final results: {e}")
+    
+    # Print comprehensive summary
+    print("\n" + "=" * 80)
+    print("🏁 FINAL PARALLEL SCRAPING RESULTS")
+    print("=" * 80)
+    print(f"📊 Total URLs processed: {len(urls)}")
+    print(f"✅ Successful: {results['stats']['successful_count']} ({(results['stats']['successful_count']/len(urls)*100):.1f}%)")
+    print(f"❌ Failed: {results['stats']['failed_count']} ({(results['stats']['failed_count']/len(urls)*100):.1f}%)")
+    print(f"🚫 Rate limit hits: {results['stats']['rate_limit_hits']}")
+    print(f"📈 Total requests made: {results['stats']['total_requests']}")
+    print(f"⏱️  Total duration: {total_time:.2f} seconds")
+    print(f"🔥 Average requests/second: {results['stats']['avg_requests_per_second']:.2f}")
+    print(f"⚡ Max workers used: {max_workers}")
+    
+    # Rate limiting analysis
+    if results['stats']['rate_limit_hits'] > 0:
+        rate_limit_percentage = (results['stats']['rate_limit_hits'] / len(urls)) * 100
+        print(f"⚠️  Rate limiting detected on {rate_limit_percentage:.1f}% of requests")
+        print("💡 Consider reducing max_workers or adding delays")
+    else:
+        print("🎉 No rate limiting detected - you might be able to push harder!")
+    
+    return results
+
+
+def extract_direct_links_for_products(cleaned_data, progress_callback=None, max_workers=20, delay=0):
+    """
+    Extract direct retailer links for all products in cleaned search data.
+    
+    Args:
+        cleaned_data (dict): Cleaned data from clean_search_results_for_frontend
+        progress_callback (callable): Optional callback for progress updates
+        max_workers (int): Maximum number of parallel threads
+        delay (float): Base delay between requests
+    
+    Returns:
+        dict: Enhanced cleaned_data with direct_links added to products
+    """
+    if not cleaned_data or not cleaned_data.get("clothing_items"):
+        if progress_callback:
+            progress_callback("No clothing items found for direct link extraction")
+        return cleaned_data
+    
+    if progress_callback:
+        progress_callback("Extracting direct retailer links...")
+    
+    # Collect all Google Shopping URLs from products with enhanced debugging
+    url_to_product_mapping = {}  # Maps URL to list of products
+    google_urls = []
+    total_products = 0
+    
+    print("🔍 [DEBUG] Starting URL collection for direct link extraction...")
+    
+    for item_idx, clothing_item in enumerate(cleaned_data["clothing_items"]):
+        item_query = clothing_item.get("query", "unknown")
+        print(f"🔍 [DEBUG] Processing clothing item {item_idx + 1}: '{item_query}'")
+        
+        for prod_idx, product in enumerate(clothing_item.get("products", [])):
+            total_products += 1
+            product_url = product.get("product_url")
+            product_title = product.get("title", "Unknown")[:50]
+            
+            print(f"   📦 Product {prod_idx + 1}: {product_title}")
+            print(f"   🔗 URL: {product_url}")
+            
+            if product_url:
+                if "google.com/shopping" in product_url:
+                    if product_url not in url_to_product_mapping:
+                        url_to_product_mapping[product_url] = []
+                        google_urls.append(product_url)
+                        print(f"   ✅ Added to extraction queue")
+                    else:
+                        print(f"   🔄 URL already queued")
+                    url_to_product_mapping[product_url].append(product)
+                else:
+                    print(f"   ❌ Not a Google Shopping URL")
+            else:
+                print(f"   ❌ No URL found")
+    
+    print(f"🔍 [DEBUG] Collection complete:")
+    print(f"   📊 Total products processed: {total_products}")
+    print(f"   🔗 Unique Google Shopping URLs found: {len(google_urls)}")
+    print(f"   📋 Sample URLs:")
+    for i, url in enumerate(google_urls[:3]):
+        print(f"      {i+1}. {url}")
+    
+    if not google_urls:
+        if progress_callback:
+            progress_callback("No Google Shopping URLs found for direct link extraction")
+        print("⚠️ [DEBUG] No Google Shopping URLs found - all products will have empty direct_links")
+        
+        # Still add empty direct_links to all products for consistency
+        for clothing_item in cleaned_data["clothing_items"]:
+            for product in clothing_item.get("products", []):
+                product["direct_links"] = []
+        return cleaned_data
+    
+    if progress_callback:
+        progress_callback(f"Extracting direct links from {len(google_urls)} product pages...")
+    
+    print(f"🚀 [DEBUG] Starting parallel scraping with {max_workers} workers...")
+    
+    # Use optimized settings for speed with enhanced error reporting
+    try:
+        scraping_results = parallel_scrape_google_products(
+            urls=google_urls,
+            delay=delay,
+            max_workers=max_workers,
+            max_retries=1,  # Fast fail for initial extraction
+            backoff_factor=1.5,
+            save_progress=False  # Don't save progress files for this
+        )
+        
+        print(f"🔍 [DEBUG] Scraping completed:")
+        print(f"   ✅ Successful extractions: {len(scraping_results.get('successful', {}))}")
+        print(f"   ❌ Failed extractions: {len(scraping_results.get('failed', {}))}")
+        print(f"   📊 Total requests made: {scraping_results.get('stats', {}).get('total_requests', 0)}")
+        
+    except Exception as e:
+        print(f"❌ [DEBUG] Parallel scraping failed with exception: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Set empty direct_links for all products
+        for clothing_item in cleaned_data["clothing_items"]:
+            for product in clothing_item.get("products", []):
+                product["direct_links"] = []
+        return cleaned_data
+    
+    # Apply the extracted direct links to products with detailed logging
+    total_links_found = 0
+    products_enhanced = 0
+    
+    print(f"🔍 [DEBUG] Applying extracted links to products...")
+    
+    for url, retailer_urls in scraping_results.get("successful", {}).items():
+        print(f"   ✅ URL: {url[:60]}... → {len(retailer_urls)} links")
+        if url in url_to_product_mapping:
+            for product in url_to_product_mapping[url]:
+                product["direct_links"] = retailer_urls
+                products_enhanced += 1
+                total_links_found += len(retailer_urls)
+                print(f"      📦 Enhanced product: {product.get('title', 'Unknown')[:40]}...")
+    
+    # For failed extractions, set empty direct_links array
+    for url, error in scraping_results.get("failed", {}).items():
+        print(f"   ❌ URL: {url[:60]}... → Failed: {error}")
+        if url in url_to_product_mapping:
+            for product in url_to_product_mapping[url]:
+                product["direct_links"] = []
+                products_enhanced += 1
+                print(f"      📦 Set empty links for: {product.get('title', 'Unknown')[:40]}...")
+    
+    print(f"🔍 [DEBUG] Link application complete:")
+    print(f"   📦 Products enhanced: {products_enhanced}")
+    print(f"   🔗 Total links found: {total_links_found}")
+    
+    if progress_callback:
+        success_rate = (scraping_results['stats']['successful_count'] / len(google_urls)) * 100 if google_urls else 0
+        progress_callback(f"Direct link extraction complete: {success_rate:.1f}% success rate, {total_links_found} total links found")
+    
+    return cleaned_data
+
+
+def save_direct_links_to_database(cleaned_data, session_id=None):
+    """
+    Save direct links to database for products that have been saved.
+    This should be called after products are saved to get their database IDs.
+    
+    Args:
+        cleaned_data (dict): Cleaned data with direct_links
+        session_id (str): Session ID to get products from database
+    
+    Returns:
+        dict: Stats about links saved
+    """
+    try:
+        from database_service import db_service
+        
+        print(f"🔍 [DEBUG] Starting direct links database save for session {session_id}")
+        
+        if not session_id:
+            print("❌ [DEBUG] No session ID provided")
+            return {"error": "Session ID required to save direct links"}
+        
+        # Get session with products from database
+        print(f"🔍 [DEBUG] Fetching session data from database...")
+        session_data = db_service.get_session_with_items_and_products(session_id)
+        if not session_data:
+            print(f"❌ [DEBUG] Session {session_id} not found in database")
+            return {"error": f"Session {session_id} not found"}
+        
+        print(f"✅ [DEBUG] Session found with {len(session_data.get('clothing_items', []))} clothing items")
+        
+        stats = {
+            "products_processed": 0,
+            "links_saved": 0,
+            "failed_saves": 0
+        }
+        
+        # Create mapping from external_id to database product
+        external_id_to_db_product = {}
+        db_products_count = 0
+        
+        print(f"🔍 [DEBUG] Building external_id mapping...")
+        for clothing_item in session_data.get("clothing_items", []):
+            for db_product in clothing_item.get("products", []):
+                db_products_count += 1
+                external_id = db_product.get("external_id")
+                if external_id:
+                    external_id_to_db_product[external_id] = db_product
+                    print(f"   📦 Mapped external_id {external_id} to DB product {db_product['id']}")
+                else:
+                    print(f"   ⚠️ DB product {db_product['id']} has no external_id")
+        
+        print(f"🔍 [DEBUG] Mapping complete:")
+        print(f"   📊 Total DB products: {db_products_count}")
+        print(f"   🗂️ Products with external_id: {len(external_id_to_db_product)}")
+        print(f"   🔗 Sample mappings: {list(external_id_to_db_product.keys())[:3]}")
+        
+        # Save direct links for products that have them
+        print(f"🔍 [DEBUG] Processing cleaned data products...")
+        for item_idx, clothing_item in enumerate(cleaned_data.get("clothing_items", [])):
+            for prod_idx, product in enumerate(clothing_item.get("products", [])):
+                stats["products_processed"] += 1
+                
+                external_id = product.get("id")  # This is the external_id
+                direct_links = product.get("direct_links", [])
+                product_title = product.get("title", "Unknown")[:40]
+                
+                print(f"   📦 Product {stats['products_processed']}: {product_title}")
+                print(f"      🔗 External ID: {external_id}")
+                print(f"      🔗 Direct links count: {len(direct_links)}")
+                
+                if external_id and external_id in external_id_to_db_product:
+                    print(f"      ✅ Found mapping to DB product")
+                    if direct_links:
+                        db_product = external_id_to_db_product[external_id]
+                        product_id = db_product["id"]
+                        
+                        print(f"      💾 Saving {len(direct_links)} links to product {product_id}")
+                        for i, link in enumerate(direct_links[:3]):  # Show first 3 links
+                            print(f"         {i+1}. {link}")
+                        
+                        success = db_service.save_product_direct_links(product_id, direct_links)
+                        if success:
+                            stats["links_saved"] += len(direct_links)
+                            print(f"      ✅ Successfully saved {len(direct_links)} links")
+                        else:
+                            stats["failed_saves"] += 1
+                            print(f"      ❌ Failed to save links")
+                    else:
+                        print(f"      ⚠️ No direct links to save")
+                else:
+                    if not external_id:
+                        print(f"      ❌ No external_id found")
+                    else:
+                        print(f"      ❌ External_id {external_id} not found in DB mapping")
+                        print(f"         Available external_ids: {list(external_id_to_db_product.keys())[:5]}")
+        
+        print(f"🔍 [DEBUG] Database save complete:")
+        print(f"   📊 Products processed: {stats['products_processed']}")
+        print(f"   💾 Links saved: {stats['links_saved']}")
+        print(f"   ❌ Failed saves: {stats['failed_saves']}")
+        
+        return stats
+        
+    except Exception as e:
+        print(f"❌ [DEBUG] Exception in save_direct_links_to_database: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Failed to save direct links: {str(e)}"}
+
 
 # Example usage (commented out)
 # if __name__ == "__main__":

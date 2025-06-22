@@ -14,6 +14,8 @@ from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 from serpapi.google_search import GoogleSearch as SerpAPISearch
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, parse_qs, unquote
 
 
 load_dotenv()
@@ -1479,11 +1481,15 @@ def test_search_shopping_item(query, country="us", language="en", save_to_file=T
             "original_query": query
         }
     
-
+import time
+import random
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs, unquote
-import time
+from datetime import datetime
+import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def extract_retailer_urls(google_url, delay=0):
     """
@@ -1491,7 +1497,7 @@ def extract_retailer_urls(google_url, delay=0):
     
     Args:
         google_url (str): The Google Shopping product URL
-        delay (float): Delay between requests in seconds (default: 1)
+        delay (float): Delay between requests in seconds (default: 0)
     
     Returns:
         list: List of retailer URLs
@@ -1503,7 +1509,8 @@ def extract_retailer_urls(google_url, delay=0):
     
     try:
         # Add delay to be respectful to the server
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
         
         # Send GET request
         response = requests.get(google_url, headers=headers)
@@ -1569,34 +1576,216 @@ def extract_actual_url(google_redirect_url):
         print(f"Error extracting URL from: {google_redirect_url} - {e}")
         return None
 
-def scrape_multiple_urls(google_urls, delay=1):
+def scrape_single_url(args):
     """
-    Scrape multiple Google Shopping URLs efficiently.
+    Scrape a single URL with retry logic. Designed for parallel execution.
     
     Args:
-        google_urls (list): List of Google Shopping URLs
-        delay (float): Delay between requests in seconds
+        args (tuple): (url, delay, max_retries, backoff_factor, thread_id)
     
     Returns:
-        dict: Dictionary with input URL as key and list of retailer URLs as value
+        dict: Result containing success/failure info
     """
-    results = {}
+    url, delay, max_retries, backoff_factor, thread_id = args
     
-    for i, url in enumerate(google_urls):
-        print(f"Processing URL {i+1}/{len(google_urls)}: {url[:60]}...")
-        retailer_urls = extract_retailer_urls(url, delay)
-        results[url] = retailer_urls
-        print(f"Found {len(retailer_urls)} retailer URLs")
+    result = {
+        'url': url,
+        'thread_id': thread_id,
+        'success': False,
+        'retailer_urls': [],
+        'error': None,
+        'attempts': 0,
+        'rate_limited': False,
+        'start_time': time.time()
+    }
+    
+    current_delay = delay
+    
+    for attempt in range(max_retries + 1):
+        result['attempts'] = attempt + 1
+        
+        try:
+            print(f"[Thread {thread_id}] Attempt {attempt + 1} for {url[:50]}...")
+            
+            retailer_urls = extract_retailer_urls(url, delay=current_delay)
+            
+            if retailer_urls:
+                result['success'] = True
+                result['retailer_urls'] = retailer_urls
+                result['end_time'] = time.time()
+                print(f"[Thread {thread_id}] ✓ Success: Found {len(retailer_urls)} retailer URLs")
+                break
+            else:
+                if attempt < max_retries:
+                    current_delay *= backoff_factor
+                    print(f"[Thread {thread_id}] ⚠ No results, retrying with {current_delay:.2f}s delay...")
+                    time.sleep(current_delay)
+                else:
+                    result['error'] = "No retailer URLs found after all retries"
+                    print(f"[Thread {thread_id}] ✗ Failed: No results after {max_retries + 1} attempts")
+                        
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Rate limited
+                result['rate_limited'] = True
+                if attempt < max_retries:
+                    current_delay *= backoff_factor
+                    print(f"[Thread {thread_id}] ⚠ Rate limited (429). Backing off for {current_delay:.2f}s...")
+                    time.sleep(current_delay)
+                else:
+                    result['error'] = f"Rate limited after {max_retries + 1} attempts"
+                    print(f"[Thread {thread_id}] ✗ Failed: Rate limited, max retries reached")
+                    break
+            else:
+                result['error'] = f"HTTP Error: {e}"
+                print(f"[Thread {thread_id}] ✗ Failed: HTTP Error {e}")
+                break
+                
+        except Exception as e:
+            result['error'] = f"Unexpected error: {e}"
+            print(f"[Thread {thread_id}] ✗ Failed: {e}")
+            break
+    
+    result['end_time'] = time.time()
+    result['duration'] = result['end_time'] - result['start_time']
+    return result
+
+def parallel_scrape_google_products(urls, delay=0, max_workers=20, max_retries=2, 
+                                   backoff_factor=2.0, save_progress=True, 
+                                   progress_file="parallel_scraping_progress.json"):
+    """
+    Scrape multiple Google Shopping product pages in parallel.
+    
+    Args:
+        urls (list): List of Google Shopping product URLs
+        delay (float): Base delay between requests in seconds (default: 0)
+        max_workers (int): Maximum number of parallel threads (default: 10)
+        max_retries (int): Maximum number of retries for failed requests
+        backoff_factor (float): Multiplier for exponential backoff
+        save_progress (bool): Save progress to file
+        progress_file (str): File to save progress to
+    
+    Returns:
+        dict: Results with URLs as keys and retailer URLs as values, plus metadata
+    """
+    
+    # Thread-safe lock for shared data
+    lock = threading.Lock()
+    
+    results = {
+        'successful': {},
+        'failed': {},
+        'stats': {
+            'total_urls': len(urls),
+            'successful_count': 0,
+            'failed_count': 0,
+            'start_time': datetime.now().isoformat(),
+            'rate_limit_hits': 0,
+            'total_requests': 0,
+            'max_workers': max_workers,
+            'base_delay': delay
+        }
+    }
+    
+    print(f"🚀 Starting PARALLEL scraping of {len(urls)} URLs...")
+    print(f"⚡ Max workers: {max_workers}, Base delay: {delay}s, Max retries: {max_retries}")
+    print("⚠️  WARNING: Parallel processing with 0 delay will likely trigger rate limits quickly!")
+    print("-" * 80)
+    
+    # Prepare arguments for parallel execution
+    worker_args = [(url, delay, max_retries, backoff_factor, i) 
+                   for i, url in enumerate(urls)]
+    
+    completed_count = 0
+    start_time = time.time()
+    
+    # Execute in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_url = {executor.submit(scrape_single_url, args): args[0] 
+                        for args in worker_args}
+        
+        # Process completed tasks as they finish
+        for future in as_completed(future_to_url):
+            with lock:  # Thread-safe access to shared results
+                result = future.result()
+                completed_count += 1
+                
+                results['stats']['total_requests'] += result['attempts']
+                
+                if result['success']:
+                    results['successful'][result['url']] = result['retailer_urls']
+                    results['stats']['successful_count'] += 1
+                else:
+                    results['failed'][result['url']] = result['error']
+                    results['stats']['failed_count'] += 1
+                
+                if result['rate_limited']:
+                    results['stats']['rate_limit_hits'] += 1
+                
+                # Print progress update
+                elapsed = time.time() - start_time
+                progress_pct = (completed_count / len(urls)) * 100
+                success_rate = (results['stats']['successful_count'] / completed_count) * 100
+                
+                print(f"[{completed_count}/{len(urls)}] ({progress_pct:.1f}%) "
+                      f"Success: {success_rate:.1f}% | "
+                      f"Rate limits: {results['stats']['rate_limit_hits']} | "
+                      f"Elapsed: {elapsed:.1f}s")
+                
+                # Save progress periodically (every 10 completions)
+                if save_progress and completed_count % 10 == 0:
+                    try:
+                        with open(progress_file, 'w') as f:
+                            json.dump(results, f, indent=2)
+                        print(f"📁 Progress saved to {progress_file}")
+                    except Exception as e:
+                        print(f"❌ Error saving progress: {e}")
+    
+    # Calculate final stats
+    total_time = time.time() - start_time
+    results['stats']['end_time'] = datetime.now().isoformat()
+    results['stats']['total_duration'] = total_time
+    results['stats']['avg_requests_per_second'] = results['stats']['total_requests'] / total_time if total_time > 0 else 0
+    
+    # Final save
+    if save_progress:
+        try:
+            with open(progress_file, 'w') as f:
+                json.dump(results, f, indent=2)
+            print(f"💾 Final results saved to {progress_file}")
+        except Exception as e:
+            print(f"❌ Error saving final results: {e}")
+    
+    # Print comprehensive summary
+    print("\n" + "=" * 80)
+    print("🏁 FINAL PARALLEL SCRAPING RESULTS")
+    print("=" * 80)
+    print(f"📊 Total URLs processed: {len(urls)}")
+    print(f"✅ Successful: {results['stats']['successful_count']} ({(results['stats']['successful_count']/len(urls)*100):.1f}%)")
+    print(f"❌ Failed: {results['stats']['failed_count']} ({(results['stats']['failed_count']/len(urls)*100):.1f}%)")
+    print(f"🚫 Rate limit hits: {results['stats']['rate_limit_hits']}")
+    print(f"📈 Total requests made: {results['stats']['total_requests']}")
+    print(f"⏱️  Total duration: {total_time:.2f} seconds")
+    print(f"🔥 Average requests/second: {results['stats']['avg_requests_per_second']:.2f}")
+    print(f"⚡ Max workers used: {max_workers}")
+    
+    # Rate limiting analysis
+    if results['stats']['rate_limit_hits'] > 0:
+        rate_limit_percentage = (results['stats']['rate_limit_hits'] / len(urls)) * 100
+        print(f"⚠️  Rate limiting detected on {rate_limit_percentage:.1f}% of requests")
+        print("💡 Consider reducing max_workers or adding delays")
+    else:
+        print("🎉 No rate limiting detected - you might be able to push harder!")
     
     return results
 
 # Example usage
 if __name__ == "__main__":
     # Replace with your Google Shopping product URL
-    google_shopping_url = "https://www.google.com/shopping/product/17728085217738913104?gl=us"
+    google_shopping_urls = ["https://www.google.com/shopping/product/3356952053188629036?gl=us"]
     
     print("Extracting retailer URLs...")
-    urls = extract_retailer_urls(google_shopping_url)
+    urls = parallel_scrape_google_products(google_shopping_urls)
     
     print(f"\nFound {len(urls)} retailer URLs:")
     for i, url in enumerate(urls, 1):

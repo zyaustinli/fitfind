@@ -15,6 +15,7 @@ export interface BackendProduct {
   review_count: number | null;
   delivery_info: string | null;
   tags: string[];
+  direct_links?: DirectLink[]; // Enhanced with direct links
 }
 
 export interface BackendClothingItem {
@@ -57,6 +58,9 @@ export interface BackendUploadResponse {
     raw_json_file?: string;
     cleaned_json_file?: string;
   };
+  // Direct links extraction metadata
+  direct_links_extracted?: boolean;
+  direct_links_extraction_time?: string;
   error?: string;
 }
 
@@ -66,6 +70,9 @@ export interface BackendRedoResponse {
   cleaned_data: BackendCleanedData;
   conversation_context: any;
   feedback_used?: string;
+  // Direct links extraction metadata
+  direct_links_extracted?: boolean;
+  direct_links_extraction_time?: string;
   error?: string;
 }
 
@@ -233,6 +240,33 @@ export interface ClothingItem {
   shipping?: string | null;
   tag?: string | null;
   error?: string;
+  direct_links?: DirectLink[]; // Enhanced with direct links
+}
+
+// Direct Links UI Component Types
+export interface ProductCardAction {
+  type: 'google_shopping' | 'direct_single' | 'direct_multiple';
+  label: string;
+  action: () => void;
+  isLoading?: boolean;
+  isDisabled?: boolean;
+  variant?: 'primary' | 'secondary' | 'outline';
+}
+
+export interface RetailerSelectionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  product: ClothingItem;
+  retailers: RetailerSelectionOption[];
+  onSelect: (retailer: RetailerSelectionOption) => void;
+  isLoading?: boolean;
+}
+
+export interface DirectLinksIndicatorProps {
+  product: ClothingItem;
+  showCount?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'badge' | 'icon' | 'text';
 }
 
 export interface SearchSession {
@@ -334,7 +368,9 @@ export interface WishlistStats {
     category: string;
     count: number;
   }>;
-}// Collection Types
+}
+
+// Collection Types
 export interface Collection {
   id: string;
   user_id: string;
@@ -397,5 +433,36 @@ export interface CollectionOperationResponse {
   message?: string;
   collection?: Collection;
   error?: string;
+}
+
+// Direct Links Types
+export interface DirectLink {
+  id: string;
+  retailer_url: string;
+  retailer_domain: string;
+  is_active: boolean;
+  created_at: string;
+  extraction_method?: string;
+  confidence_score?: number;
+}
+
+export interface DirectLinksExtractionStatus {
+  status: 'pending' | 'extracting' | 'completed' | 'failed' | 'partial';
+  extractedCount: number;
+  totalCount: number;
+  startTime?: string;
+  endTime?: string;
+  errors?: Array<{
+    productId: string;
+    error: string;
+  }>;
+}
+
+export interface RetailerSelectionOption {
+  directLink: DirectLink;
+  displayName: string;
+  logo?: string;
+  trustScore?: number;
+  isRecommended?: boolean;
 } 
 

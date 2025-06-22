@@ -187,7 +187,7 @@ class DatabaseService:
             return False
     
     def save_products(self, clothing_item_id: str, products: List[Dict], use_service_client: bool = True) -> bool:
-        """Save products for a clothing item"""
+        """Save products for a clothing item with optional direct links"""
         try:
             # Always use service client for backend operations
             client = self.service_client
@@ -214,29 +214,46 @@ class DatabaseService:
             
             if products_to_insert:
                 response = client.table("products").insert(products_to_insert).execute()
-                return bool(response.data)
+                if response.data:
+                    # Save direct links if they exist
+                    for i, saved_product in enumerate(response.data):
+                        if i < len(products):
+                            direct_links = products[i].get("direct_links", [])
+                            if direct_links:
+                                self.save_product_direct_links(saved_product["id"], direct_links)
+                    return True
+                return False
             return False
         except Exception as e:
             logger.error(f"Error saving products: {e}")
             return False
     
     def get_session_with_items_and_products(self, session_id: str) -> Optional[Dict]:
-        """Get complete search session with clothing items and products"""
+        """Get complete search session with clothing items and products including direct links"""
         try:
             # Get session
-            session_response = self.client.table("search_sessions").select("*").eq("id", session_id).execute()
+            session_response = self.service_client.table("search_sessions").select("*").eq("id", session_id).execute()
             if not session_response.data:
                 return None
             
             session = session_response.data[0]
             
-            # Get clothing items
-            items_response = (self.client.table("clothing_items")
+            # Get clothing items with products
+            items_response = (self.service_client.table("clothing_items")
                             .select("*, products(*)")
                             .eq("search_session_id", session_id)
                             .execute())
             
-            session["clothing_items"] = items_response.data or []
+            clothing_items = items_response.data or []
+            
+            # Enhance products with direct links
+            for item in clothing_items:
+                if item.get("products"):
+                    for product in item["products"]:
+                        direct_links = self.get_product_direct_links(product["id"])
+                        product["direct_links"] = direct_links
+            
+            session["clothing_items"] = clothing_items
             return session
         except Exception as e:
             logger.error(f"Error getting session with items and products: {e}")
@@ -363,7 +380,7 @@ class DatabaseService:
             return False
     
     def get_user_wishlist(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
-        """Get user's wishlist with product details"""
+        """Get user's wishlist with product details including direct links"""
         try:
             # Enforce reasonable limits
             limit = min(limit, 100)  # Maximum 100 items per request
@@ -374,7 +391,16 @@ class DatabaseService:
                        .order("created_at", desc=True)
                        .range(offset, offset + limit - 1)
                        .execute())
-            return response.data or []
+            
+            wishlist_items = response.data or []
+            
+            # Enhance products with direct links
+            for item in wishlist_items:
+                if item.get("products"):
+                    direct_links = self.get_product_direct_links(item["products"]["id"])
+                    item["products"]["direct_links"] = direct_links
+            
+            return wishlist_items
         except Exception as e:
             logger.error(f"Error getting user wishlist: {e}")
             return []
@@ -588,7 +614,7 @@ class DatabaseService:
             return False
     
     def get_search_session_details(self, session_id: str, user_id: str) -> Optional[Dict]:
-        """Get complete search session details with all clothing items and products"""
+        """Get complete search session details with all clothing items and products including direct links"""
         try:
             # First verify the session belongs to the user
             session_check = (self.service_client.table("search_sessions")
@@ -613,7 +639,16 @@ class DatabaseService:
                        .eq("id", session_id)
                        .execute())
             
-            return response.data[0] if response.data else None
+            session_data = response.data[0] if response.data else None
+            
+            if session_data:
+                # Enhance products with direct links
+                for clothing_item in session_data.get("clothing_items", []):
+                    for product in clothing_item.get("products", []):
+                        direct_links = self.get_product_direct_links(product["id"])
+                        product["direct_links"] = direct_links
+            
+            return session_data
         except Exception as e:
             logger.error(f"Error getting search session details for session {session_id}: {e}")
             return None
@@ -876,6 +911,12 @@ class DatabaseService:
                 if saved_item and saved_item.get("product_id"):
                     # Fix: Rename product_id to products to match wishlist structure
                     saved_item["products"] = saved_item.pop("product_id")
+                    
+                    # Enhance products with direct links
+                    if saved_item.get("products"):
+                        direct_links = self.get_product_direct_links(saved_item["products"]["id"])
+                        saved_item["products"]["direct_links"] = direct_links
+                    
                     # Add collection-specific metadata
                     saved_item["collection_position"] = item.get("position", 0)
                     saved_item["added_to_collection_at"] = item.get("added_at")
@@ -988,6 +1029,390 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error getting collection items count: {e}")
             return 0
+
+    # Product Direct Links Management
+    
+    def save_product_direct_links(self, product_id: str, retailer_urls: List[str]) -> bool:
+        """
+        Save direct retailer links for a product.
+        
+        Args:
+            product_id (str): UUID of the product
+            retailer_urls (List[str]): List of direct retailer URLs
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Validate inputs
+            if not product_id or not self._is_valid_uuid(product_id):
+                logger.error(f"Invalid product_id provided: {product_id}")
+                return False
+                
+            if not retailer_urls or not isinstance(retailer_urls, list):
+                logger.warning(f"No valid retailer URLs provided for product {product_id}")
+                return True  # Not an error - just no links to save
+            
+            # Verify product exists
+            product_response = (self.service_client.table("products")
+                              .select("id")
+                              .eq("id", product_id)
+                              .execute())
+            
+            if not product_response.data:
+                logger.error(f"Product {product_id} not found")
+                return False
+            
+            # Clean and deduplicate URLs
+            clean_urls = []
+            seen_urls = set()
+            
+            for url in retailer_urls:
+                if not url or not isinstance(url, str):
+                    continue
+                    
+                # Basic URL validation
+                url = url.strip()
+                if not url.startswith(('http://', 'https://')):
+                    logger.warning(f"Invalid URL format (missing protocol): {url}")
+                    continue
+                
+                # Deduplicate
+                if url not in seen_urls:
+                    clean_urls.append(url)
+                    seen_urls.add(url)
+            
+            if not clean_urls:
+                logger.warning(f"No valid URLs after cleaning for product {product_id}")
+                return True
+            
+            # Remove existing links for this product
+            self._delete_existing_direct_links(product_id)
+            
+            # Prepare direct link records
+            link_records = []
+            for url in clean_urls:
+                retailer_name = self._extract_retailer_name(url)
+                link_record = {
+                    "product_id": product_id,
+                    "retailer_name": retailer_name,
+                    "direct_url": url,
+                    "extraction_status": "success",
+                    "is_active": True
+                }
+                link_records.append(link_record)
+            
+            # Insert new links
+            if link_records:
+                response = (self.service_client.table("product_direct_links")
+                           .insert(link_records)
+                           .execute())
+                
+                success = bool(response.data)
+                if success:
+                    logger.info(f"Saved {len(link_records)} direct links for product {product_id}")
+                else:
+                    logger.error(f"Failed to save direct links for product {product_id}")
+                return success
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving direct links for product {product_id}: {e}")
+            return False
+    
+    def get_product_direct_links(self, product_id: str) -> List[Dict]:
+        """
+        Get all active direct retailer links for a product.
+        
+        Args:
+            product_id (str): UUID of the product
+            
+        Returns:
+            List[Dict]: List of direct link records
+        """
+        try:
+            # Validate input
+            if not product_id or not self._is_valid_uuid(product_id):
+                logger.error(f"Invalid product_id provided: {product_id}")
+                return []
+            
+            response = (self.service_client.table("product_direct_links")
+                       .select("*")
+                       .eq("product_id", product_id)
+                       .eq("is_active", True)
+                       .order("created_at", desc=True)
+                       .execute())
+            
+            return response.data or []
+            
+        except Exception as e:
+            logger.error(f"Error getting direct links for product {product_id}: {e}")
+            return []
+    
+    def update_product_direct_links(self, product_id: str, retailer_urls: List[str]) -> bool:
+        """
+        Update direct retailer links for a product (replaces existing links).
+        
+        Args:
+            product_id (str): UUID of the product
+            retailer_urls (List[str]): New list of direct retailer URLs
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # This is essentially the same as save_product_direct_links
+            # since that method already removes existing links
+            return self.save_product_direct_links(product_id, retailer_urls)
+            
+        except Exception as e:
+            logger.error(f"Error updating direct links for product {product_id}: {e}")
+            return False
+    
+    def get_products_without_direct_links(self, limit: int = 100) -> List[Dict]:
+        """
+        Get products that don't have any direct links extracted yet.
+        Useful for batch processing or background jobs.
+        
+        Args:
+            limit (int): Maximum number of products to return
+            
+        Returns:
+            List[Dict]: List of product records without direct links
+        """
+        try:
+            # Enforce reasonable limits
+            limit = min(max(limit, 1), 1000)  # Between 1 and 1000
+            
+            # Get all products first, then filter out those with direct links
+            all_products_response = (self.service_client.table("products")
+                                   .select("id, title, product_url, source")
+                                   .not_.is_("product_url", "null")  # Only products with URLs
+                                   .execute())
+            
+            all_products = all_products_response.data or []
+            
+            # Get products that already have direct links
+            products_with_links_response = (self.service_client.table("product_direct_links")
+                                          .select("product_id")
+                                          .eq("is_active", True)
+                                          .execute())
+            
+            products_with_links_ids = set()
+            if products_with_links_response.data:
+                products_with_links_ids = {item["product_id"] for item in products_with_links_response.data}
+            
+            # Filter out products that already have links
+            products_without_links = [
+                product for product in all_products 
+                if product["id"] not in products_with_links_ids
+            ]
+            
+            # Apply limit
+            return products_without_links[:limit]
+            
+        except Exception as e:
+            logger.error(f"Error getting products without direct links: {e}")
+            return []
+    
+    def mark_direct_link_extraction_failed(self, product_id: str, error_message: str = None) -> bool:
+        """
+        Mark that direct link extraction failed for a product.
+        This prevents repeated failed attempts.
+        
+        Args:
+            product_id (str): UUID of the product
+            error_message (str): Optional error message
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Validate input
+            if not product_id or not self._is_valid_uuid(product_id):
+                logger.error(f"Invalid product_id provided: {product_id}")
+                return False
+            
+            # Check if a failed record already exists
+            existing_response = (self.service_client.table("product_direct_links")
+                               .select("id")
+                               .eq("product_id", product_id)
+                               .eq("extraction_status", "failed")
+                               .execute())
+            
+            if existing_response.data:
+                logger.info(f"Failed extraction already recorded for product {product_id}")
+                return True
+            
+            # Create a failed extraction record
+            failed_record = {
+                "product_id": product_id,
+                "retailer_name": "extraction_failed",
+                "direct_url": error_message or "Extraction failed",
+                "extraction_status": "failed",
+                "is_active": False
+            }
+            
+            response = (self.service_client.table("product_direct_links")
+                       .insert(failed_record)
+                       .execute())
+            
+            return bool(response.data)
+            
+        except Exception as e:
+            logger.error(f"Error marking extraction failed for product {product_id}: {e}")
+            return False
+    
+    def get_direct_links_extraction_stats(self) -> Dict[str, int]:
+        """
+        Get statistics about direct links extraction.
+        
+        Returns:
+            Dict[str, int]: Statistics including counts by status
+        """
+        try:
+            stats = {
+                "total_products": 0,
+                "products_with_links": 0,
+                "products_failed_extraction": 0,
+                "products_pending_extraction": 0,
+                "total_direct_links": 0
+            }
+            
+            # Total products with URLs
+            total_response = (self.service_client.table("products")
+                            .select("id", count="exact")
+                            .not_.is_("product_url", "null")
+                            .execute())
+            stats["total_products"] = total_response.count or 0
+            
+            # Products with successful direct links
+            success_response = (self.service_client.table("product_direct_links")
+                              .select("product_id", count="exact")
+                              .eq("extraction_status", "success")
+                              .eq("is_active", True)
+                              .execute())
+            
+            # Count unique product IDs
+            if success_response.data:
+                unique_products = set(link["product_id"] for link in success_response.data)
+                stats["products_with_links"] = len(unique_products)
+            
+            # Total direct links
+            stats["total_direct_links"] = success_response.count or 0
+            
+            # Products with failed extraction
+            failed_response = (self.service_client.table("product_direct_links")
+                             .select("product_id", count="exact")
+                             .eq("extraction_status", "failed")
+                             .execute())
+            
+            if failed_response.data:
+                unique_failed = set(link["product_id"] for link in failed_response.data)
+                stats["products_failed_extraction"] = len(unique_failed)
+            
+            # Products pending extraction
+            stats["products_pending_extraction"] = (
+                stats["total_products"] - 
+                stats["products_with_links"] - 
+                stats["products_failed_extraction"]
+            )
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error getting extraction stats: {e}")
+            return {"error": str(e)}
+    
+    def _delete_existing_direct_links(self, product_id: str) -> bool:
+        """
+        Helper method to delete existing direct links for a product.
+        
+        Args:
+            product_id (str): UUID of the product
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            response = (self.service_client.table("product_direct_links")
+                       .delete()
+                       .eq("product_id", product_id)
+                       .execute())
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting existing links for product {product_id}: {e}")
+            return False
+    
+    def _extract_retailer_name(self, url: str) -> str:
+        """
+        Extract retailer name from URL for display purposes.
+        
+        Args:
+            url (str): The retailer URL
+            
+        Returns:
+            str: Human-readable retailer name
+        """
+        try:
+            from urllib.parse import urlparse
+            
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            
+            # Remove www. prefix
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            # Map common domains to display names
+            domain_mapping = {
+                'amazon.com': 'Amazon',
+                'amazon.co.uk': 'Amazon UK',
+                'amazon.ca': 'Amazon Canada',
+                'amazon.de': 'Amazon Germany',
+                'ebay.com': 'eBay',
+                'walmart.com': 'Walmart',
+                'target.com': 'Target',
+                'nordstrom.com': 'Nordstrom',
+                'macys.com': "Macy's",
+                'zara.com': 'Zara',
+                'hm.com': 'H&M',
+                'nike.com': 'Nike',
+                'adidas.com': 'Adidas',
+                'gap.com': 'Gap',
+                'oldnavy.com': 'Old Navy',
+                'bananarepublic.com': 'Banana Republic',
+                'jcrew.com': 'J.Crew',
+                'anthropologie.com': 'Anthropologie',
+                'urbanoutfitters.com': 'Urban Outfitters',
+                'forever21.com': 'Forever 21',
+                'express.com': 'Express',
+                'kohls.com': "Kohl's",
+                'tjmaxx.com': 'T.J. Maxx',
+                'marshalls.com': 'Marshalls',
+                'costco.com': 'Costco',
+                'saks.com': 'Saks Fifth Avenue',
+                'bloomingdales.com': "Bloomingdale's",
+                'nordstromrack.com': 'Nordstrom Rack'
+            }
+            
+            # Check if we have a mapping for this domain
+            if domain in domain_mapping:
+                return domain_mapping[domain]
+            
+            # Extract main domain name for unknown retailers
+            domain_parts = domain.split('.')
+            if len(domain_parts) >= 2:
+                main_name = domain_parts[0]
+                # Capitalize first letter
+                return main_name.capitalize()
+            
+            return domain.capitalize()
+            
+        except Exception as e:
+            logger.warning(f"Error extracting retailer name from {url}: {e}")
+            return "Unknown Retailer"
 
 # Global database service instance
 db_service = DatabaseService() 
