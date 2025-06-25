@@ -438,7 +438,7 @@ export default function SearchSessionDetailPage() {
                     size="sm" 
                     onClick={handleRedo}
                     disabled={isRedoing}
-                    className="gap-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                    className="gap-2 bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
                   >
                     {isRedoing ? (
                       <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />

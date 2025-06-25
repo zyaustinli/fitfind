@@ -141,7 +141,7 @@ export function AddToCollectionModal({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-lg flex items-center justify-center">
               <FolderPlus className="w-4 h-4 text-primary" />
             </div>
             <h2 className="text-xl font-semibold">Add to Collections</h2>
@@ -343,7 +343,7 @@ export function AddToCollectionModal({
             </Button>
             <Button 
               onClick={handleAddToCollections}
-              className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+              className="flex-1 bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
               disabled={loading || selectedCollections.size === 0}
             >
               {loading ? (

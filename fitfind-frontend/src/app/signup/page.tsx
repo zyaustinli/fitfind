@@ -78,11 +78,11 @@ export default function SignUpPage() {
           {/* Hero Section */}
           <div className="text-center py-16 px-4">
             <div className="mb-8">
-              <div className="w-20 h-20 bg-gradient-to-br from-primary to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-primary to-[#6b7f3a] rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Sparkles className="h-10 w-10 text-white" />
               </div>
               <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6">
-                Join <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">FitFind</span>
+                Join <span className="bg-gradient-to-r from-primary to-[#6b7f3a] bg-clip-text text-transparent">FitFind</span>
               </h1>
               <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
                 Discover your perfect style with AI-powered fashion search. Upload any outfit photo and find similar items from top retailers worldwide.
@@ -92,7 +92,7 @@ export default function SignUpPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
               <Button 
                 size="lg" 
-                className="px-8 py-3 text-lg bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                className="px-8 py-3 text-lg bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
                 onClick={() => {
                   setAuthModalMode('signup');
                   setIsAuthModalOpen(true);
@@ -193,7 +193,7 @@ export default function SignUpPage() {
           </div>
 
           {/* CTA Section */}
-          <div className="text-center px-4 py-16 bg-gradient-to-r from-primary/5 to-purple-600/5 rounded-3xl mb-8">
+          <div className="text-center px-4 py-16 bg-gradient-to-r from-primary/5 to-[#6b7f3a]/5 rounded-3xl mb-8">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Ready to Find Your Style?</h2>
             <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">
               Join thousands of fashion enthusiasts who use FitFind to discover their perfect style
@@ -201,7 +201,7 @@ export default function SignUpPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Button 
                 size="lg" 
-                className="px-8 py-3 text-lg bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                className="px-8 py-3 text-lg bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
                 onClick={() => {
                   setAuthModalMode('signup');
                   setIsAuthModalOpen(true);

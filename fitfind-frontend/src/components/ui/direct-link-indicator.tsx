@@ -49,8 +49,8 @@ export function DirectLinksIndicator({
         status: 'single',
         icon: Store,
         text: 'Direct Link',
-        bgColor: 'bg-green-100 text-green-800',
-        iconColor: 'text-green-600',
+        bgColor: 'bg-green-100 text-[#556b2f]',
+        iconColor: 'text-[#556b2f]',
         borderColor: 'border-green-200',
       };
     } else {
@@ -58,9 +58,9 @@ export function DirectLinksIndicator({
         status: 'multiple',
         icon: Link,
         text: `${linkCount} Retailers`,
-        bgColor: 'bg-blue-100 text-blue-800',
-        iconColor: 'text-blue-600',
-        borderColor: 'border-blue-200',
+        bgColor: 'bg-green-100 text-[#6b7f3a]',
+        iconColor: 'text-[#6b7f3a]',
+        borderColor: 'border-green-200',
       };
     }
   };
@@ -184,16 +184,16 @@ export function ExtractionStatusIndicator({
         return {
           icon: Clock,
           text: 'Extracting Links...',
-          bgColor: 'bg-blue-100 text-blue-800',
-          iconColor: 'text-blue-600',
+                  bgColor: 'bg-green-100 text-[#556b2f]',
+        iconColor: 'text-[#556b2f]',
           animate: true,
         };
       case 'completed':
         return {
           icon: CheckCircle,
-          text: `${extractedCount}/${totalCount} Products Enhanced`,
-          bgColor: 'bg-green-100 text-green-800',
-          iconColor: 'text-green-600',
+          text: `${extractedCount}/${totalCount} Products Found`,
+                  bgColor: 'bg-green-100 text-[#556b2f]',
+        iconColor: 'text-[#556b2f]',
           animate: false,
         };
       case 'failed':
@@ -207,7 +207,7 @@ export function ExtractionStatusIndicator({
       case 'partial':
         return {
           icon: CheckCircle,
-          text: `${extractedCount}/${totalCount} Products Enhanced`,
+          text: `${extractedCount}/${totalCount} Products Found`,
           bgColor: 'bg-orange-100 text-orange-800',
           iconColor: 'text-orange-600',
           animate: false,
@@ -260,7 +260,7 @@ export function RetailerCountBadge({
 
   if (variant === 'compact') {
     return (
-      <div className="inline-flex items-center justify-center w-5 h-5 bg-blue-500 text-white text-xs font-bold rounded-full">
+      <div className="inline-flex items-center justify-center w-5 h-5 bg-[#556b2f] text-white text-xs font-bold rounded-full">
         {count > 99 ? '99+' : count}
       </div>
     );
@@ -268,7 +268,7 @@ export function RetailerCountBadge({
 
   if (variant === 'detailed') {
     return (
-      <div className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-[#556b2f] text-xs font-medium rounded-full border border-green-200">
         <Store className="h-3 w-3" />
         <span>{count} {count === 1 ? 'retailer' : 'retailers'}</span>
       </div>
@@ -276,7 +276,7 @@ export function RetailerCountBadge({
   }
 
   return (
-    <div className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 bg-blue-500 text-white text-xs font-medium rounded-full">
+          <div className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 bg-[#556b2f] text-white text-xs font-medium rounded-full">
       {count > 99 ? '99+' : count}
     </div>
   );

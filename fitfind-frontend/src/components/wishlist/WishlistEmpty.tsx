@@ -21,11 +21,11 @@ export function WishlistEmpty({ onStartShopping, className }: WishlistEmptyProps
     <div className={`flex flex-col items-center justify-center py-16 px-4 text-center ${className}`}>
       {/* Icon with gradient background */}
       <div className="relative mb-8">
-        <div className="w-24 h-24 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full flex items-center justify-center">
+        <div className="w-24 h-24 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-full flex items-center justify-center">
           <Heart className="w-12 h-12 text-primary" />
         </div>
-        <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-purple-600/20 to-pink-600/20 rounded-full flex items-center justify-center">
-          <Sparkles className="w-4 h-4 text-purple-600" />
+                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-[#6b7f3a]/20 to-[#8fad52]/20 rounded-full flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-[#556b2f]" />
         </div>
       </div>
 
@@ -42,7 +42,7 @@ export function WishlistEmpty({ onStartShopping, className }: WishlistEmptyProps
       <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
         <Button
           onClick={handleStartShopping}
-          className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                      className="flex-1 bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
           size="lg"
         >
           <Search className="w-4 h-4 mr-2" />

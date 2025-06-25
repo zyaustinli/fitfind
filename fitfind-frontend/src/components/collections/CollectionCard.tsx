@@ -17,7 +17,7 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
     <Link href={`/collections/${collection.id}`} className={className}>
       <div className="group relative bg-background/50 border border-border/50 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl cursor-pointer h-80">
         {/* Cover Image */}
-        <div className="aspect-[4/3] bg-gradient-to-br from-primary/10 to-purple-600/10 flex items-center justify-center relative overflow-hidden">
+        <div className="aspect-[4/3] bg-gradient-to-br from-primary/10 to-[#6b7f3a]/10 flex items-center justify-center relative overflow-hidden">
           {collection.cover_image_url ? (
             <img 
               src={collection.cover_image_url} 
@@ -27,7 +27,7 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
           ) : (
             <div className="relative">
               <FolderHeart className="w-12 h-12 text-primary opacity-60" />
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-purple-600/5 rounded-full blur-xl"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-[#6b7f3a]/5 rounded-full blur-xl"></div>
             </div>
           )}
           
@@ -54,7 +54,7 @@ export function CollectionCard({ collection, className = "" }: CollectionCardPro
         </div>
 
         {/* Hover Indicator */}
-        <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-primary to-purple-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+        <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-primary to-[#6b7f3a] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
       </div>
     </Link>
   );

@@ -275,7 +275,7 @@ export function WishlistCard({
                       >
                         {copySuccess ? (
                           <>
-                            <Check className="h-4 w-4 text-green-600" />
+                            <Check className="h-4 w-4 text-[#556b2f]" />
                             Copied!
                           </>
                         ) : (
@@ -525,7 +525,7 @@ export function WishlistCard({
               className="h-8 w-8 p-0"
             >
               {copySuccess ? (
-                <Check className="h-4 w-4 text-green-600" />
+                <Check className="h-4 w-4 text-[#556b2f]" />
               ) : (
                 <Share2 className="h-4 w-4" />
               )}

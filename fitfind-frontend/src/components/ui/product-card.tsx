@@ -130,7 +130,10 @@ export function ProductCard({
               size="sm"
               onClick={handlePrimaryAction}
               disabled={isActionLoading}
-              className="bg-white/90 text-gray-900 hover:bg-white"
+              className={cn(
+                "bg-white/90 hover:bg-white text-gray-900",
+                cardAction.hasDirectLinks && "hover:bg-green-50 hover:text-[#556b2f]"
+              )}
             >
               {cardAction.type === 'google_shopping' && <ExternalLink className="h-4 w-4" />}
               {cardAction.type === 'direct_single' && <Store className="h-4 w-4" />}
@@ -247,7 +250,7 @@ export function ProductCard({
             </div>
           )}
 
-          {/* Enhanced Action Buttons */}
+          {/* Action Buttons */}
           <div className="flex gap-2 pt-2">
             {/* Primary Action Button */}
             <Button
@@ -257,7 +260,7 @@ export function ProductCard({
               disabled={isActionLoading}
               className={cn(
                 "flex-1 transition-all duration-200",
-                cardAction.hasDirectLinks && "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                cardAction.hasDirectLinks && "bg-gradient-to-r from-[#556b2f] to-[#6b7f3a] hover:from-[#3f4f22] hover:to-[#556b2f]"
               )}
             >
               {cardAction.type === 'google_shopping' && <ExternalLink className="h-4 w-4 mr-1" />}

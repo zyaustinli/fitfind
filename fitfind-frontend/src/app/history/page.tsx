@@ -388,7 +388,7 @@ export default function HistoryPage() {
             <div className="mb-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h1 className="text-3xl font-bold text-foreground mb-2">Search History</h1>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-[#6b7f3a] bg-clip-text text-transparent">Search History</h1>
                   <p className="text-muted-foreground">
                     {totalCount > 0 ? `${totalCount} search${totalCount === 1 ? '' : 'es'}` : 'No searches yet'}
                   </p>

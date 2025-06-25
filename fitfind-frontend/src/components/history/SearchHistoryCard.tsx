@@ -42,8 +42,8 @@ const statusConfig = {
   completed: {
     icon: CheckCircle,
     label: "Ready",
-    iconColor: "text-green-500",
-    bgColor: "bg-green-500/10"
+            iconColor: "text-[#6b7f3a]",
+        bgColor: "bg-[#6b7f3a]/10"
   },
   error: {
     icon: AlertTriangle,
@@ -189,7 +189,7 @@ export function SearchHistoryCard({
             variant="secondary"
             size="sm"
             className={cn(
-              "h-8 w-8 p-0 bg-green-500/90 hover:bg-green-600 border-0 shadow-lg",
+              "h-8 w-8 p-0 bg-[#556b2f]/90 hover:bg-[#3f4f22] border-0 shadow-lg",
               "opacity-0 group-hover:opacity-100 transition-all duration-300",
               "transform translate-x-2 group-hover:translate-x-0"
             )}

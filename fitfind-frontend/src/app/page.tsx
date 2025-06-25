@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Link, Clock } from "lucide-react";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
-import { ExtractionStatusIndicator } from "@/components/ui/direct-link-indicator";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { uploadOutfitImage, redoSearch, ApiError } from "@/lib/api";
@@ -61,9 +61,9 @@ export default function Home() {
     const stages = [
       { stage: 'analyzing' as const, message: 'Analyzing your outfit...', duration: 1000 },
       { stage: 'searching' as const, message: 'Searching for similar items...', duration: 2000 },
-      { stage: 'extracting' as const, message: 'Extracting direct retailer links...', duration: 3000 },
-      { stage: 'saving' as const, message: 'Saving enhanced product data...', duration: 1000 },
-      { stage: 'complete' as const, message: 'Enhancement complete!', duration: 500 },
+      { stage: 'extracting' as const, message: 'Finding retailer links...', duration: 3000 },
+      { stage: 'saving' as const, message: 'Saving product data...', duration: 1000 },
+      { stage: 'complete' as const, message: 'Search complete!', duration: 500 },
     ];
 
     let currentStageIndex = 0;
@@ -251,7 +251,7 @@ export default function Home() {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-foreground mb-2">Upload Your Outfit</h1>
             <p className="text-muted-foreground">
-              Let FitFind AI analyze outfits and find similar items with direct retailer links!
+              Let FitFind AI analyze outfits and find similar items from top retailers!
             </p>
           </div>
 
@@ -271,21 +271,21 @@ export default function Home() {
                   onClick={handleFindRecommendations}
                   disabled={isSearching}
                   size="lg"
-                  className="w-full max-w-xs bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl"
+                  className="w-full max-w-xs bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl"
                 >
                   <Sparkles className="h-5 w-5 mr-2" />
                   Find Recommendations
                 </Button>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Includes direct retailer links extraction
+                  Find items from your favorite retailers
                 </p>
               </div>
             )}
 
-            {/* Enhanced Loading State */}
+            {/* Loading State */}
             {(isSearching || extractionProgress.isExtracting) && (
               <div className="mt-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+                <Card className="p-6 bg-gradient-to-r from-green-50 to-lime-50 border-green-200">
                   <div className="flex items-center justify-center gap-3 mb-4">
                     {getProgressIcon()}
                     <span className="text-lg font-medium text-gray-800">
@@ -297,46 +297,46 @@ export default function Home() {
                   <div className="flex items-center justify-between text-xs text-gray-600 mb-3">
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'analyzing' && 'text-blue-600 font-medium'
+                      extractionProgress.stage === 'analyzing' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
-                        extractionProgress.stage === 'analyzing' ? 'bg-blue-600 animate-pulse' : 'bg-gray-300'
+                        extractionProgress.stage === 'analyzing' ? 'bg-[#556b2f] animate-pulse' : 'bg-gray-300'
                       )} />
                       Analyze
                     </span>
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'searching' && 'text-blue-600 font-medium'
+                      extractionProgress.stage === 'searching' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
                         ['searching', 'extracting', 'saving', 'complete'].includes(extractionProgress.stage) 
-                          ? extractionProgress.stage === 'searching' ? 'bg-blue-600 animate-pulse' : 'bg-green-500'
+                          ? extractionProgress.stage === 'searching' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
                           : 'bg-gray-300'
                       )} />
                       Search
                     </span>
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'extracting' && 'text-blue-600 font-medium'
+                      extractionProgress.stage === 'extracting' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
                         ['extracting', 'saving', 'complete'].includes(extractionProgress.stage)
-                          ? extractionProgress.stage === 'extracting' ? 'bg-blue-600 animate-pulse' : 'bg-green-500'
+                          ? extractionProgress.stage === 'extracting' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
                           : 'bg-gray-300'
                       )} />
-                      Extract Links
+                      Find Links
                     </span>
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'saving' && 'text-blue-600 font-medium'
+                      extractionProgress.stage === 'saving' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
                         ['saving', 'complete'].includes(extractionProgress.stage)
-                          ? extractionProgress.stage === 'saving' ? 'bg-blue-600 animate-pulse' : 'bg-green-500'
+                          ? extractionProgress.stage === 'saving' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
                           : 'bg-gray-300'
                       )} />
                       Save
@@ -344,7 +344,7 @@ export default function Home() {
                   </div>
 
                   <div className="text-xs text-gray-500 text-center">
-                    This may take a few seconds as we extract direct retailer links...
+                    This may take a few seconds as we find the best product matches...
                   </div>
                 </Card>
               </div>
@@ -354,20 +354,11 @@ export default function Home() {
             {searchSession?.status === 'completed' && (
               <div className="mt-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex flex-col gap-4">
-                  <div className="text-green-700 text-sm font-medium">
+                  <div className="text-[#556b2f] text-sm font-medium">
                     ✨ Analysis complete! Found {searchSession.results?.length || 0} items
                   </div>
                   
-                  {searchSession.extractionStatus && (
-                    <div className="flex justify-center">
-                      <ExtractionStatusIndicator
-                        status={searchSession.extractionStatus.direct_links_extracted ? 'completed' : 'failed'}
-                        extractedCount={searchSession.results?.filter(item => item.direct_links?.length).length || 0}
-                        totalCount={searchSession.results?.length || 0}
-                        size="sm"
-                      />
-                    </div>
-                  )}
+
 
                   <div className="flex gap-2 justify-center">
                     <Button
@@ -375,16 +366,16 @@ export default function Home() {
                       disabled={isRedoing}
                       variant="outline"
                       size="sm"
-                      className="text-primary hover:bg-primary/5"
+                      className="text-[#556b2f] hover:bg-green-50 border-green-200"
                     >
                       <RefreshCw className={cn("h-4 w-4 mr-1", isRedoing && "animate-spin")} />
-                      {isRedoing ? 'Improving...' : 'Improve Results'}
+                      {isRedoing ? 'Improving...' : 'Redo Seach'}
                     </Button>
                     <Button
                       onClick={handleUploadNewOutfit}
                       variant="ghost"
                       size="sm"
-                      className="text-muted-foreground hover:text-primary"
+                      className="text-muted-foreground hover:text-[#556b2f]"
                     >
                       <Upload className="h-4 w-4 mr-1" />
                       Upload New
@@ -443,17 +434,17 @@ export default function Home() {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground max-w-2xl">
               <div className="flex flex-col items-center p-4 bg-white/50 rounded-lg border border-border/50">
-                <ImageIcon className="h-8 w-8 text-blue-500 mb-2" />
+                <ImageIcon className="h-8 w-8 text-[#556b2f] mb-2" />
                 <div className="font-medium mb-1">AI Analysis</div>
                 <div className="text-xs text-center">Identifies clothing items and style elements</div>
               </div>
               <div className="flex flex-col items-center p-4 bg-white/50 rounded-lg border border-border/50">
-                <Search className="h-8 w-8 text-green-500 mb-2" />
+                <Search className="h-8 w-8 text-[#6b7f3a] mb-2" />
                 <div className="font-medium mb-1">Smart Search</div>
                 <div className="text-xs text-center">Finds similar items across multiple retailers</div>
               </div>
               <div className="flex flex-col items-center p-4 bg-white/50 rounded-lg border border-border/50">
-                <Link className="h-8 w-8 text-purple-500 mb-2" />
+                <Link className="h-8 w-8 text-[#8fad52] mb-2" />
                 <div className="font-medium mb-1">Direct Links</div>
                 <div className="text-xs text-center">Shop directly at retailer websites</div>
               </div>

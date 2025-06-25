@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ExternalLink, Star, Shield, Store, ArrowRight, Clock, AlertCircle } from "lucide-react";
+import { X, ExternalLink, ArrowRight, Clock, AlertCircle } from "lucide-react";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
 import { cn } from "@/lib/utils";
@@ -49,23 +49,6 @@ export function RetailerSelectionModal({
     }
   };
 
-  const getTrustBadge = (trustScore: number) => {
-    if (trustScore >= 80) {
-      return {
-        icon: Shield,
-        text: 'Trusted',
-        color: 'text-green-600 bg-green-50 border-green-200',
-      };
-    } else if (trustScore >= 60) {
-      return {
-        icon: Star,
-        text: 'Verified',
-        color: 'text-blue-600 bg-blue-50 border-blue-200',
-      };
-    }
-    return null;
-  };
-
   const formatUrl = (url: string) => {
     try {
       const urlObj = new URL(url);
@@ -80,12 +63,12 @@ export function RetailerSelectionModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <div className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
           {/* Header */}
           <div className="flex items-start justify-between p-6 border-b border-gray-100">
             <div className="flex-1 pr-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                Choose Your Preferred Retailer
+                Choose Your Retailer
               </h2>
               <p className="text-sm text-gray-600 line-clamp-2">
                 {product.title || 'Select where you\'d like to shop for this item'}
@@ -136,7 +119,6 @@ export function RetailerSelectionModal({
             ) : (
               <div className="space-y-3 max-h-[50vh] overflow-y-auto scrollbar-hide">
                 {retailers.map((retailer, index) => {
-                  const trustBadge = getTrustBadge(retailer.trustScore || 0);
                   const isSelected = selectedRetailer?.directLink.id === retailer.directLink.id;
                   const isDisabled = isNavigating && !isSelected;
 
@@ -147,83 +129,32 @@ export function RetailerSelectionModal({
                       disabled={isDisabled}
                       className={cn(
                         'w-full text-left p-4 rounded-xl border-2 transition-all duration-200',
-                        'hover:border-blue-300 hover:bg-blue-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
+                        'hover:border-green-300 hover:bg-green-50/50 focus:outline-none focus:ring-2 focus:ring-[#556b2f] focus:ring-offset-2',
                         isSelected && isNavigating 
-                          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500 ring-offset-2' 
+                          ? 'border-[#556b2f] bg-green-50 ring-2 ring-[#556b2f] ring-offset-2' 
                           : 'border-gray-200 bg-white',
-                        isDisabled && 'opacity-50 cursor-not-allowed',
-                        retailer.isRecommended && !isSelected && 'ring-1 ring-green-200 border-green-300'
+                        isDisabled && 'opacity-50 cursor-not-allowed'
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          {/* Retailer Icon */}
-                          <div className={cn(
-                            'flex items-center justify-center w-10 h-10 rounded-lg',
-                            retailer.isRecommended ? 'bg-green-100' : 'bg-gray-100'
-                          )}>
-                            <Store className={cn(
-                              'h-5 w-5',
-                              retailer.isRecommended ? 'text-green-600' : 'text-gray-600'
-                            )} />
-                          </div>
-
-                          {/* Retailer Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-medium text-gray-900 truncate">
-                                {retailer.displayName}
-                              </h3>
-                              {retailer.isRecommended && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
-                                  Recommended
-                                </span>
-                              )}
-                              {trustBadge && (
-                                <span className={cn(
-                                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border',
-                                  trustBadge.color
-                                )}>
-                                  <trustBadge.icon className="h-3 w-3" />
-                                  {trustBadge.text}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500 truncate">
-                              {formatUrl(retailer.directLink.retailer_url)}
-                            </p>
-                            {retailer.trustScore && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <div className="flex">
-                                  {[...Array(5)].map((_, i) => (
-                                    <Star
-                                      key={i}
-                                      className={cn(
-                                        'h-3 w-3',
-                                        i < Math.floor(retailer.trustScore! / 20) 
-                                          ? 'text-yellow-400 fill-current' 
-                                          : 'text-gray-300'
-                                      )}
-                                    />
-                                  ))}
-                                </div>
-                                <span className="text-xs text-gray-500 ml-1">
-                                  Trust Score: {retailer.trustScore}%
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 truncate mb-1">
+                            {retailer.displayName}
+                          </h3>
+                          <p className="text-sm text-gray-500 truncate">
+                            {formatUrl(retailer.directLink.retailer_url)}
+                          </p>
                         </div>
 
                         {/* Action Indicator */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 ml-4">
                           {isSelected && isNavigating ? (
-                            <div className="flex items-center gap-2 text-blue-600">
+                            <div className="flex items-center gap-2 text-[#556b2f]">
                               <Clock className="h-4 w-4 animate-pulse" />
                               <span className="text-sm font-medium">Opening...</span>
                             </div>
                           ) : (
-                            <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                            <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-[#556b2f] transition-colors" />
                           )}
                         </div>
                       </div>
@@ -236,9 +167,8 @@ export function RetailerSelectionModal({
 
           {/* Footer */}
           <div className="flex items-center justify-between p-6 bg-gray-50 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Shield className="h-4 w-4" />
-              <span>All links are verified and secure</span>
+            <div className="text-xs text-gray-500">
+              All links are verified and secure
             </div>
             <div className="flex items-center gap-3">
               <Button

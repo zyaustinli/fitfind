@@ -148,7 +148,7 @@ export function WishlistFilters({
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-lg flex items-center justify-center">
             <Filter className="w-4 h-4 text-primary" />
           </div>
           <div>

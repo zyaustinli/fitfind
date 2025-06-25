@@ -219,8 +219,8 @@ export default function CollectionDetailPage() {
         {!loading.isLoading && !error.hasError && !currentCollection && (
           <div className="text-center py-12">
             <div className="relative mb-8 mx-auto w-24 h-24">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full blur-xl"></div>
-              <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-purple-600/10 rounded-full flex items-center justify-center border border-primary/20">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-full blur-xl"></div>
+              <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-[#6b7f3a]/10 rounded-full flex items-center justify-center border border-primary/20">
                 <FolderHeart className="w-10 h-10 text-primary opacity-60" />
               </div>
             </div>
@@ -257,12 +257,12 @@ export default function CollectionDetailPage() {
 
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-xl flex items-center justify-center">
+                      <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-xl flex items-center justify-center">
                         <FolderHeart className="w-6 h-6 text-primary" />
                       </div>
                     </div>
                     <div>
-                      <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-purple-600 bg-clip-text text-transparent">
+                      <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-[#6b7f3a] bg-clip-text text-transparent">
                         {currentCollection.name}
                       </h1>
                       {currentCollection.description && (
@@ -306,8 +306,8 @@ export default function CollectionDetailPage() {
             {collectionItems.length === 0 && !loading.isLoading ? (
               <div className="text-center py-12">
                 <div className="relative mb-8 mx-auto w-24 h-24">
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full blur-xl"></div>
-                  <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-purple-600/10 rounded-full flex items-center justify-center border border-primary/20">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-full blur-xl"></div>
+                  <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-[#6b7f3a]/10 rounded-full flex items-center justify-center border border-primary/20">
                     <FolderHeart className="w-10 h-10 text-primary opacity-60" />
                   </div>
                 </div>
@@ -319,7 +319,7 @@ export default function CollectionDetailPage() {
                 
                 <Button
                   onClick={() => router.push('/')}
-                  className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                  className="bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90"
                 >
                   Discover Fashion
                 </Button>

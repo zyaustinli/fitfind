@@ -82,10 +82,10 @@ export default function SavedItemsPage() {
             <div className="text-center max-w-md">
               {/* AI-themed icon */}
               <div className="relative mb-8 mx-auto w-24 h-24">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-full blur-xl"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-purple-600/10 rounded-full flex items-center justify-center border border-primary/20">
+                            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-full blur-xl"></div>
+            <div className="relative w-24 h-24 bg-gradient-to-br from-primary/10 to-[#6b7f3a]/10 rounded-full flex items-center justify-center border border-primary/20">
                   <Heart className="w-10 h-10 text-primary" />
-                  <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-purple-600 animate-pulse" />
+                  <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-[#6b7f3a] animate-pulse" />
                 </div>
               </div>
               
@@ -99,7 +99,7 @@ export default function SavedItemsPage() {
               <div className="space-y-3">
                 <Button 
                   onClick={() => setModalState({ isOpen: true, mode: 'signup' })}
-                  className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                  className="w-full bg-gradient-to-r from-primary to-[#6b7f3a] hover:from-primary/90 hover:to-[#6b7f3a]/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
                   size="lg"
                 >
                   <Sparkles className="w-5 h-5 mr-2" />
@@ -254,12 +254,12 @@ export default function SavedItemsPage() {
 
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-purple-600/20 rounded-xl flex items-center justify-center">
+                  <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-[#6b7f3a]/20 rounded-xl flex items-center justify-center">
                     <Heart className="w-5 h-5 text-primary" />
                   </div>
-                  <Stars className="absolute -top-1 -right-1 w-4 h-4 text-purple-600 animate-pulse" />
+                  <Stars className="absolute -top-1 -right-1 w-4 h-4 text-[#6b7f3a] animate-pulse" />
                 </div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-[#6b7f3a] bg-clip-text text-transparent">
                   Saved Items
                 </h1>
               </div>
