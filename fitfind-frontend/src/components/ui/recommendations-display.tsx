@@ -16,11 +16,6 @@ interface RecommendationsDisplayProps {
   onSave?: (item: ClothingItem) => void;
   onRemove?: (item: ClothingItem) => void;
   isItemSaved?: (item: ClothingItem) => boolean;
-  extractionMeta?: {
-    direct_links_extracted?: boolean;
-    direct_links_extraction_time?: string;
-  };
-  showExtractionStatus?: boolean;
 }
 
 export function RecommendationsDisplay({
@@ -28,9 +23,7 @@ export function RecommendationsDisplay({
   backendData,
   onSave,
   onRemove,
-  isItemSaved,
-  extractionMeta,
-  showExtractionStatus = true
+  isItemSaved
 }: RecommendationsDisplayProps) {
   // Group products by clothing type using backend data if available
   const groupedProducts = useMemo(() => {
@@ -148,7 +141,6 @@ export function RecommendationsDisplay({
                         onRemove={onRemove}
                         isSaved={isItemSaved ? isItemSaved(item) : false}
                         hideSearchQuery={true}
-                        showDirectLinksIndicator={true}
                       />
                     ))}
                   </div>

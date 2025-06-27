@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Link, Clock } from "lucide-react";
+import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Clock } from "lucide-react";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
 
@@ -14,24 +14,17 @@ import { useWishlist } from "@/hooks/useWishlist";
 import { cn } from "@/lib/utils";
 import type { UploadedImage, ClothingItem, SearchSession, BackendUploadResponse } from "@/types";
 
-interface ExtendedSearchSession extends SearchSession {
-  extractionStatus?: {
-    direct_links_extracted?: boolean;
-    direct_links_extraction_time?: string;
-  };
-}
-
 export default function Home() {
   const [uploadedImage, setUploadedImage] = useState<UploadedImage | null>(null);
-  const [searchSession, setSearchSession] = useState<ExtendedSearchSession | null>(null);
+  const [searchSession, setSearchSession] = useState<SearchSession | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isRedoing, setIsRedoing] = useState(false);
-  const [extractionProgress, setExtractionProgress] = useState<{
-    isExtracting: boolean;
+  const [searchProgress, setSearchProgress] = useState<{
+    isSearching: boolean;
     message: string;
-    stage: 'analyzing' | 'searching' | 'extracting' | 'saving' | 'complete';
+    stage: 'analyzing' | 'searching' | 'complete';
   }>({
-    isExtracting: false,
+    isSearching: false,
     message: '',
     stage: 'analyzing'
   });
@@ -42,27 +35,25 @@ export default function Home() {
   const handleImageSelect = useCallback((image: UploadedImage) => {
     setUploadedImage(image);
     setSearchSession(null);
-    setExtractionProgress({ isExtracting: false, message: '', stage: 'analyzing' });
+    setSearchProgress({ isSearching: false, message: '', stage: 'analyzing' });
   }, []);
 
   const handleImageRemove = useCallback(() => {
     setUploadedImage(null);
     setSearchSession(null);
-    setExtractionProgress({ isExtracting: false, message: '', stage: 'analyzing' });
+    setSearchProgress({ isSearching: false, message: '', stage: 'analyzing' });
   }, []);
 
   const handleUploadNewOutfit = useCallback(() => {
     setUploadedImage(null);
     setSearchSession(null);
-    setExtractionProgress({ isExtracting: false, message: '', stage: 'analyzing' });
+    setSearchProgress({ isSearching: false, message: '', stage: 'analyzing' });
   }, []);
 
-  const simulateExtractionProgress = useCallback(() => {
+  const simulateSearchProgress = useCallback(() => {
     const stages = [
-      { stage: 'analyzing' as const, message: 'Analyzing your outfit...', duration: 1000 },
-      { stage: 'searching' as const, message: 'Searching for similar items...', duration: 2000 },
-      { stage: 'extracting' as const, message: 'Finding retailer links...', duration: 3000 },
-      { stage: 'saving' as const, message: 'Saving product data...', duration: 1000 },
+      { stage: 'analyzing' as const, message: 'Analyzing your outfit...', duration: 1500 },
+      { stage: 'searching' as const, message: 'Searching for similar items...', duration: 2500 },
       { stage: 'complete' as const, message: 'Search complete!', duration: 500 },
     ];
 
@@ -71,8 +62,8 @@ export default function Home() {
     const advanceStage = () => {
       if (currentStageIndex < stages.length) {
         const currentStage = stages[currentStageIndex];
-        setExtractionProgress({
-          isExtracting: currentStage.stage !== 'complete',
+        setSearchProgress({
+          isSearching: currentStage.stage !== 'complete',
           message: currentStage.message,
           stage: currentStage.stage
         });
@@ -93,10 +84,10 @@ export default function Home() {
     if (!uploadedImage) return;
 
     setIsSearching(true);
-    simulateExtractionProgress();
+    simulateSearchProgress();
     
     try {
-      const initialSession: ExtendedSearchSession = {
+      const initialSession: SearchSession = {
         id: Date.now().toString(),
         imageUrl: uploadedImage.preview,
         status: 'analyzing',
@@ -126,11 +117,7 @@ export default function Home() {
         conversationContext: response.conversation_context,
         backendData: response.cleaned_data,
         fileId: response.file_id,
-        sessionId: response.session_id,
-        extractionStatus: {
-          direct_links_extracted: response.direct_links_extracted,
-          direct_links_extraction_time: response.direct_links_extraction_time,
-        }
+        sessionId: response.session_id
       });
 
     } catch (error) {
@@ -148,7 +135,7 @@ export default function Home() {
       } : null);
     } finally {
       setIsSearching(false);
-      setExtractionProgress({ isExtracting: false, message: '', stage: 'complete' });
+      setSearchProgress({ isSearching: false, message: '', stage: 'complete' });
     }
   };
 
@@ -173,10 +160,10 @@ export default function Home() {
     if (!searchSession?.conversationContext) return;
 
     setIsRedoing(true);
-    setExtractionProgress({
-      isExtracting: true,
+    setSearchProgress({
+      isSearching: true,
       message: 'Improving search results...',
-      stage: 'extracting'
+      stage: 'searching'
     });
     
     try {
@@ -202,11 +189,7 @@ export default function Home() {
         queries: response.new_queries,
         results: transformedResults,
         conversationContext: response.conversation_context,
-        backendData: response.cleaned_data,
-        extractionStatus: {
-          direct_links_extracted: response.direct_links_extracted,
-          direct_links_extraction_time: response.direct_links_extraction_time,
-        }
+        backendData: response.cleaned_data
       } : null);
 
     } catch (error) {
@@ -224,20 +207,16 @@ export default function Home() {
       } : null);
     } finally {
       setIsRedoing(false);
-      setExtractionProgress({ isExtracting: false, message: '', stage: 'complete' });
+      setSearchProgress({ isSearching: false, message: '', stage: 'complete' });
     }
   };
 
   const getProgressIcon = () => {
-    switch (extractionProgress.stage) {
+    switch (searchProgress.stage) {
       case 'analyzing':
         return <ImageIcon className="h-5 w-5 animate-pulse" />;
       case 'searching':
         return <Search className="h-5 w-5 animate-pulse" />;
-      case 'extracting':
-        return <Link className="h-5 w-5 animate-pulse" />;
-      case 'saving':
-        return <ShoppingBag className="h-5 w-5 animate-pulse" />;
       default:
         return <Clock className="h-5 w-5 animate-spin" />;
     }
@@ -283,63 +262,39 @@ export default function Home() {
             )}
 
             {/* Loading State */}
-            {(isSearching || extractionProgress.isExtracting) && (
+            {(isSearching || searchProgress.isSearching) && (
               <div className="mt-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <Card className="p-6 bg-gradient-to-r from-green-50 to-lime-50 border-green-200">
                   <div className="flex items-center justify-center gap-3 mb-4">
                     {getProgressIcon()}
                     <span className="text-lg font-medium text-gray-800">
-                      {extractionProgress.message || 'Processing...'}
+                      {searchProgress.message || 'Processing...'}
                     </span>
                   </div>
                   
                   {/* Progress Steps */}
-                  <div className="flex items-center justify-between text-xs text-gray-600 mb-3">
+                  <div className="flex items-center justify-center gap-8 text-xs text-gray-600 mb-3">
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'analyzing' && 'text-[#556b2f] font-medium'
+                      searchProgress.stage === 'analyzing' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
-                        extractionProgress.stage === 'analyzing' ? 'bg-[#556b2f] animate-pulse' : 'bg-gray-300'
+                        searchProgress.stage === 'analyzing' ? 'bg-[#556b2f] animate-pulse' : 'bg-gray-300'
                       )} />
                       Analyze
                     </span>
                     <span className={cn(
                       'flex items-center gap-1',
-                      extractionProgress.stage === 'searching' && 'text-[#556b2f] font-medium'
+                      searchProgress.stage === 'searching' && 'text-[#556b2f] font-medium'
                     )}>
                       <div className={cn(
                         'w-2 h-2 rounded-full',
-                        ['searching', 'extracting', 'saving', 'complete'].includes(extractionProgress.stage) 
-                          ? extractionProgress.stage === 'searching' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
+                        ['searching', 'complete'].includes(searchProgress.stage) 
+                          ? searchProgress.stage === 'searching' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
                           : 'bg-gray-300'
                       )} />
                       Search
-                    </span>
-                    <span className={cn(
-                      'flex items-center gap-1',
-                      extractionProgress.stage === 'extracting' && 'text-[#556b2f] font-medium'
-                    )}>
-                      <div className={cn(
-                        'w-2 h-2 rounded-full',
-                        ['extracting', 'saving', 'complete'].includes(extractionProgress.stage)
-                          ? extractionProgress.stage === 'extracting' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
-                          : 'bg-gray-300'
-                      )} />
-                      Find Links
-                    </span>
-                    <span className={cn(
-                      'flex items-center gap-1',
-                      extractionProgress.stage === 'saving' && 'text-[#556b2f] font-medium'
-                    )}>
-                      <div className={cn(
-                        'w-2 h-2 rounded-full',
-                        ['saving', 'complete'].includes(extractionProgress.stage)
-                          ? extractionProgress.stage === 'saving' ? 'bg-[#556b2f] animate-pulse' : 'bg-[#8fad52]'
-                          : 'bg-gray-300'
-                      )} />
-                      Save
                     </span>
                   </div>
 
@@ -357,8 +312,6 @@ export default function Home() {
                   <div className="text-[#556b2f] text-sm font-medium">
                     ✨ Analysis complete! Found {searchSession.results?.length || 0} items
                   </div>
-                  
-
 
                   <div className="flex gap-2 justify-center">
                     <Button
@@ -369,7 +322,7 @@ export default function Home() {
                       className="text-[#556b2f] hover:bg-green-50 border-green-200"
                     >
                       <RefreshCw className={cn("h-4 w-4 mr-1", isRedoing && "animate-spin")} />
-                      {isRedoing ? 'Improving...' : 'Redo Seach'}
+                      {isRedoing ? 'Improving...' : 'Redo Search'}
                     </Button>
                     <Button
                       onClick={handleUploadNewOutfit}
@@ -417,8 +370,6 @@ export default function Home() {
             onSave={handleSaveItem}
             onRemove={handleRemoveItem}
             isItemSaved={(item) => item.product_id ? isInWishlist(item.product_id) : false}
-            extractionMeta={searchSession.extractionStatus}
-            showExtractionStatus={true}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center">
@@ -428,11 +379,11 @@ export default function Home() {
                 Ready to Find Your Style?
               </h3>
               <p className="text-muted-foreground max-w-md">
-                Upload an image of your outfit and discover similar items from top retailers with direct shopping links.
+                Upload an image of your outfit and discover similar items from top retailers.
               </p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground max-w-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-muted-foreground max-w-lg">
               <div className="flex flex-col items-center p-4 bg-white/50 rounded-lg border border-border/50">
                 <ImageIcon className="h-8 w-8 text-[#556b2f] mb-2" />
                 <div className="font-medium mb-1">AI Analysis</div>
@@ -442,11 +393,6 @@ export default function Home() {
                 <Search className="h-8 w-8 text-[#6b7f3a] mb-2" />
                 <div className="font-medium mb-1">Smart Search</div>
                 <div className="text-xs text-center">Finds similar items across multiple retailers</div>
-              </div>
-              <div className="flex flex-col items-center p-4 bg-white/50 rounded-lg border border-border/50">
-                <Link className="h-8 w-8 text-[#8fad52] mb-2" />
-                <div className="font-medium mb-1">Direct Links</div>
-                <div className="text-xs text-center">Shop directly at retailer websites</div>
               </div>
             </div>
           </div>

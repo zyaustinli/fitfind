@@ -24,19 +24,6 @@ CREATE TABLE public.collection_items (
   CONSTRAINT collection_items_saved_item_id_fkey FOREIGN KEY (saved_item_id) REFERENCES public.user_saved_items(id),
   CONSTRAINT collection_items_collection_id_fkey FOREIGN KEY (collection_id) REFERENCES public.user_collections(id)
 );
-CREATE TABLE public.product_direct_links (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  product_id uuid,
-  retailer_name text NOT NULL,
-  direct_url text NOT NULL,
-  extraction_status text CHECK (extraction_status = ANY (ARRAY['success'::text, 'failed'::text, 'not_attempted'::text])),
-  extracted_at timestamp with time zone DEFAULT now(),
-  last_checked timestamp with time zone DEFAULT now(),
-  is_active boolean DEFAULT true,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT product_direct_links_pkey PRIMARY KEY (id),
-  CONSTRAINT product_direct_links_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
-);
 CREATE TABLE public.products (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   clothing_item_id uuid,

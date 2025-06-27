@@ -799,7 +799,6 @@ def upload_file():
                 enable_redo=True,
                 save_raw_json=True,
                 save_cleaned_json=True,
-                extract_direct_links=True,  # Enable direct link extraction
                 progress_callback=progress_callback
             )
             
@@ -873,51 +872,7 @@ def upload_file():
                         print(f"WARNING: Failed to save clothing items for session {session_record['id']}")
                         # Log but don't fail the request since we have the data
                     else:
-                        # Save direct links to database if extraction was successful
-                        cleaned_data = result.get('cleaned_data', {})
-                        direct_links_extracted = result.get('direct_links_extracted', False)
-                        
-                        print(f"🔗 [DEBUG] Direct links extraction status: {direct_links_extracted}")
-                        print(f"🔗 [DEBUG] Cleaned data has {len(cleaned_data.get('clothing_items', []))} clothing items")
-                        
-                        # Count products with direct_links for debugging
-                        total_products_in_cleaned_data = 0
-                        products_with_direct_links = 0
-                        for item in cleaned_data.get('clothing_items', []):
-                            for product in item.get('products', []):
-                                total_products_in_cleaned_data += 1
-                                if product.get('direct_links'):
-                                    products_with_direct_links += 1
-                        
-                        print(f"🔗 [DEBUG] Cleaned data analysis:")
-                        print(f"   📊 Total products: {total_products_in_cleaned_data}")
-                        print(f"   🔗 Products with direct_links: {products_with_direct_links}")
-                        
-                        if direct_links_extracted:
-                            print("🔗 Saving direct links to database...")
-                            from search_recommendation import save_direct_links_to_database
-                            
-                            try:
-                                link_stats = save_direct_links_to_database(
-                                    cleaned_data=cleaned_data,
-                                    session_id=session_record['id']
-                                )
-                                
-                                if "error" in link_stats:
-                                    print(f"⚠️ Warning: Failed to save direct links: {link_stats['error']}")
-                                else:
-                                    print(f"✅ Successfully saved {link_stats.get('links_saved', 0)} direct links for {link_stats.get('products_processed', 0)} products")
-                            except Exception as e:
-                                print(f"❌ Exception while saving direct links: {e}")
-                                import traceback
-                                traceback.print_exc()
-                        else:
-                            print("⚠️ Direct links not extracted, skipping database save")
-                            # Show why extraction might have failed
-                            if total_products_in_cleaned_data == 0:
-                                print("   🔍 Reason: No products found in cleaned data")
-                            elif products_with_direct_links == 0:
-                                print("   🔍 Reason: Products exist but no direct_links field found")
+                        print(f"✅ Successfully saved clothing items and products for session {session_record['id']}")
             
             # Prepare conversation context for JSON serialization
             conversation_context = result.get('conversation_context')
@@ -941,9 +896,6 @@ def upload_file():
                     'raw_json_file': result.get('raw_results_saved_to'),
                     'cleaned_json_file': result.get('cleaned_results_saved_to')
                 },
-                # Direct links extraction metadata
-                'direct_links_extracted': result.get('direct_links_extracted', False),
-                'direct_links_extraction_time': result.get('direct_links_extraction_time'),
                 'progress_messages': progress_messages  # For debugging/analytics
             }
             
