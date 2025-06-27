@@ -249,9 +249,9 @@ export default function Home() {
       <div className="flex-1 p-8 border-r border-border bg-background">
         <div className="max-w-lg mx-auto h-full flex flex-col">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Upload Your Outfit</h1>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-primary to-[#6b7f3a] bg-clip-text text-transparent">Upload Your Outfit</h1>
             <p className="text-muted-foreground">
-              Let FitFind AI analyze outfits and find similar items from top retailers!
+              Let FitFind AI analyze outfits and find similar items from retailers!
             </p>
           </div>
 
