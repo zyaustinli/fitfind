@@ -21,7 +21,15 @@ from database_service import db_service
 from auth_middleware import require_auth, optional_auth, get_current_user, get_current_user_id, is_authenticated
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Configure CORS based on environment
+if os.getenv('FLASK_ENV') == 'production':
+    # In production, allow specific origins
+    frontend_url = os.getenv('FRONTEND_URL', 'https://fitfind-frontend.vercel.app')
+    CORS(app, origins=[frontend_url])
+else:
+    # In development, allow all origins
+    CORS(app)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -1221,7 +1229,6 @@ if __name__ == '__main__':
     print("Starting FitFind Outfit Recommendation Server...")
     print(f"Upload folder: {UPLOAD_FOLDER}")
     print(f"Results folder: {RESULTS_FOLDER}")
-    print("Server will be available at: http://localhost:5000")
     
     # Test database connection on startup
     try:
@@ -1231,4 +1238,11 @@ if __name__ == '__main__':
         print(f"Warning: Database connection failed: {e}")
         print("Server will start but database features will be unavailable")
     
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    # Configure for environment
+    if os.getenv('FLASK_ENV') == 'production':
+        print("Running in production mode")
+        app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+    else:
+        print("Running in development mode")
+        print("Server will be available at: http://localhost:5000")
+        app.run(debug=True, host='0.0.0.0', port=5000) 
