@@ -984,282 +984,82 @@ def upload_file():
 def redo_search():
     """Handle redo search requests with custom feedback"""
     try:
-        # Get authenticated user if available
         user_id = get_current_user_id()
-        if user_id:
-            logger.info(f"Processing redo search for authenticated user: {user_id}")
-        else:
-            logger.info("Processing redo search for anonymous user")
-        
         data = request.get_json()
-        
+
         if not data or 'conversation_context' not in data:
             return jsonify({'error': 'Missing conversation context'}), 400
-        
+
         conversation_context = data['conversation_context']
         feedback_message = data.get('feedback_message')
-        file_id = data.get('file_id')  # We need the file_id to reconstruct image_bytes
-        session_id = data.get('session_id')  # Database session ID
-        
-        # Validate required fields
-        if not conversation_context:
-            return jsonify({'error': 'Empty conversation context'}), 400
-        
-        if not file_id and not session_id:
-            return jsonify({'error': 'Missing file_id or session_id required for image retrieval'}), 400
-        
-        logger.info(f"Redo request: file_id={file_id}, session_id={session_id}, user_id={user_id}")
-        logger.info(f"Conversation context keys: {list(conversation_context.keys()) if conversation_context else 'None'}")
-        
-        # If conversation_context doesn't have image_bytes, we need to reconstruct it
-        if conversation_context and 'image_bytes' not in conversation_context:
-            logger.info(f"Attempting to reconstruct image_bytes for file_id: {file_id}, session_id: {session_id}")
-            
-            # Try to get the storage path from the session record
-            storage_path = None
-            session_details = None
-            
-            if session_id:
-                try:
-                    # Get session details to find storage path
-                    if user_id:
-                        # For authenticated users, use the secure method
-                        session_details = db_service.get_search_session_details(session_id, user_id)
-                        logger.info(f"Retrieved session details for authenticated user {user_id}")
-                    else:
-                        # For anonymous users, use the basic method (no user verification)
-                        session_details = db_service.get_search_session(session_id)
-                        logger.info(f"Retrieved session details for anonymous user")
-                    
-                    if session_details:
-                        storage_path = session_details.get('storage_path')
-                        logger.info(f"Found storage_path: {storage_path}")
-                        
-                        # Additional logging for debugging
-                        if storage_path:
-                            logger.info(f"Session has storage_path, will attempt Supabase retrieval")
-                        else:
-                            logger.warning(f"Session exists but has no storage_path (may be older session)")
-                            # For sessions without storage_path, we might need to try reconstruction
-                            if 'image_url' in session_details:
-                                logger.info(f"Session has image_url: {session_details['image_url']}")
-                    else:
-                        logger.warning(f"No session details found for session_id: {session_id}")
-                        
-                except Exception as e:
-                    logger.error(f"Error retrieving session details: {e}")
-            else:
-                logger.warning("No session_id provided for image retrieval")
-            
-            # If we have storage path, retrieve from Supabase Storage
-            if storage_path:
-                try:
-                    from image_storage_service import storage_service
-                    logger.info(f"Attempting to retrieve image from storage path: {storage_path}")
-                    image_result = storage_service.get_image_bytes(storage_path)
-                    
-                    if image_result.get('success'):
-                        conversation_context['image_bytes'] = image_result['image_bytes']
-                        logger.info(f"Successfully retrieved image bytes from storage for session {session_id}")
-                    else:
-                        logger.error(f"Failed to retrieve image from storage: {image_result.get('error')}")
-                        
-                except Exception as e:
-                    logger.error(f"Exception while retrieving image from storage: {e}")
-                    logger.error(f"Storage path was: {storage_path}")
-            else:
-                logger.warning("No storage_path found in session details")
-            
-            # Fallback 1: For older sessions without storage_path, try to download from image_url
-            if 'image_bytes' not in conversation_context and session_details and 'image_url' in session_details:
-                image_url = session_details['image_url']
-                logger.info(f"Attempting fallback to download from image_url: {image_url}")
-                try:
-                    import requests
-                    response = requests.get(image_url, timeout=10)
-                    if response.status_code == 200:
-                        conversation_context['image_bytes'] = response.content
-                        logger.info(f"Successfully retrieved image bytes from image_url")
-                    else:
-                        logger.warning(f"Failed to download image from URL, status: {response.status_code}")
-                except Exception as e:
-                    logger.warning(f"Could not retrieve image from image_url: {e}")
-            
-            # Fallback 2: try to find the uploaded image file in local folder (for development/recent sessions)
-            if 'image_bytes' not in conversation_context and file_id:
-                logger.info(f"Attempting fallback to local file for file_id: {file_id}")
-                try:
-                    upload_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
-                                   if f.startswith(file_id)]
-                    logger.info(f"Found {len(upload_files)} files matching file_id in upload folder")
-                    
-                    if upload_files:
-                        image_path = os.path.join(app.config['UPLOAD_FOLDER'], upload_files[0])
-                        logger.info(f"Attempting to read image from: {image_path}")
-                        
-                        # Read the raw image bytes (not base64 encoded)
-                        with open(image_path, "rb") as image_file:
-                            image_bytes = image_file.read()
-                        conversation_context['image_bytes'] = image_bytes
-                        logger.info(f"Successfully retrieved image bytes from local file for file_id {file_id}")
-                    else:
-                        logger.warning(f"No files found in upload folder matching file_id: {file_id}")
-                        
-                except Exception as e:
-                    logger.warning(f"Could not retrieve image from local folder: {e}")
-            
-            # If still no image_bytes, return detailed error
-            if 'image_bytes' not in conversation_context:
-                error_details = {
-                    'file_id': file_id,
-                    'session_id': session_id,
-                    'user_id': user_id,
-                    'has_session_details': session_details is not None,
-                    'storage_path': storage_path,
-                    'checked_local_folder': file_id is not None
-                }
-                logger.error(f"Could not retrieve image data for redo operation. Details: {error_details}")
-                
-                return jsonify({
-                    'error': 'Could not retrieve image data for redo operation. Image may have been deleted or is not accessible.',
-                    'details': error_details
-                }), 400
-        
-        # Validate and reconstruct conversation context structure
-        required_fields = ['conversation_history', 'image_bytes', 'system_prompt', 'model']
-        missing_fields = [field for field in required_fields if field not in conversation_context]
-        
-        if missing_fields:
-            logger.error(f"Missing required fields in conversation_context: {missing_fields}")
-            
-            # Try to reconstruct missing fields with defaults
-            if 'system_prompt' not in conversation_context:
-                # Use a default system prompt if missing
-                conversation_context['system_prompt'] = """You are a professional fashion researcher specializing in generating precise search queries for clothing identification. When provided with an image containing clothing items, you will analyze each piece and generate specific search queries that can be used to find near-identical replicas online."""
-                logger.info("Added default system_prompt to conversation_context")
-            
-            if 'model' not in conversation_context:
-                # Use default model if missing
-                conversation_context['model'] = 'gemini-2.5-flash-preview-05-20'
-                logger.info("Added default model to conversation_context")
-            
-            if 'conversation_history' not in conversation_context:
-                logger.error("conversation_history is missing and cannot be reconstructed")
-                return jsonify({
-                    'error': 'Invalid conversation context: missing conversation history',
-                    'details': {'missing_fields': missing_fields}
-                }), 400
-            
-            # image_bytes should have been reconstructed above
-            if 'image_bytes' not in conversation_context:
-                logger.error("image_bytes is missing and could not be reconstructed")
-                return jsonify({
-                    'error': 'Could not retrieve image data for redo operation',
-                    'details': {'missing_fields': missing_fields}
-                }), 400
-        
-        logger.info("Conversation context validation passed, calling redo_search_queries")
-        
-        # Import the redo function
-        from search_recommendation import redo_search_queries
-        
-        # Redo the search queries
+        session_id = data.get('session_id')
+
+        if not session_id:
+            return jsonify({'error': 'Missing session_id required for image retrieval'}), 400
+
+        # Retrieve the session details from the database
+        session_details = db_service.get_search_session(session_id)
+        if not session_details:
+            return jsonify({'error': 'Search session not found.'}), 404
+
+        storage_path = session_details.get('storage_path')
+        if not storage_path:
+            return jsonify({'error': 'Image storage path not found for this session.'}), 400
+
+        # Retrieve the image from Supabase Storage
+        from image_storage_service import storage_service
+        image_result = storage_service.get_image_bytes(storage_path)
+
+        if not image_result.get('success'):
+            logger.error(f"Failed to retrieve image from storage: {image_result.get('error')}")
+            return jsonify({
+                'error': 'Could not retrieve image data for redo operation. The image may have been deleted or is inaccessible.',
+                'details': {'storage_path': storage_path}
+            }), 500
+
+        conversation_context['image_bytes'] = image_result['image_bytes']
+
+        # Now, with the image bytes, proceed with the redo operation
+        from search_recommendation import redo_search_queries, search_items_parallel, clean_search_results_for_frontend
+
         redo_result = redo_search_queries(conversation_context, feedback_message)
-        
+
         if "error" in redo_result:
             return jsonify({'error': redo_result["error"]}), 500
-        
-        # Get the new queries
+
         new_queries = redo_result.get("queries", [])
-        
         if not new_queries or "error" in new_queries:
             return jsonify({'error': 'Failed to generate new search queries'}), 500
-        
-        # Perform new search with updated queries
-        from search_recommendation import search_items_parallel, clean_search_results_for_frontend, extract_direct_links_for_products
-        
+
         country = data.get('country', 'us')
         language = data.get('language', 'en')
-        
-        # Search for items with new queries
+
         search_results = search_items_parallel(new_queries, country=country, language=language)
-        
-        # Clean the results
         cleaned_data = clean_search_results_for_frontend(search_results)
-        
-        # Extract direct links for redo search
-        try:
-            cleaned_data = extract_direct_links_for_products(
-                cleaned_data=cleaned_data,
-                progress_callback=lambda msg: print(f"🔄 Redo: {msg}"),
-                max_workers=20,
-                delay=0
-            )
-            direct_links_extracted = True
-        except Exception as e:
-            print(f"⚠️ Warning: Direct link extraction failed in redo: {e}")
-            direct_links_extracted = False
-        
-        # Update database session if user is authenticated and session_id provided
+
+        # Update the session in the database
         if user_id and session_id:
-            try:
-                # Remove image_bytes from redo_result for JSON serialization in database
-                conversation_context_for_db = redo_result
-                if conversation_context_for_db and 'image_bytes' in conversation_context_for_db:
-                    conversation_context_for_db = {k: v for k, v in conversation_context_for_db.items() if k != 'image_bytes'}
-                
-                session_updates = {
-                    'search_queries': new_queries,
-                    'num_products_found': cleaned_data.get('summary', {}).get('total_products', 0),
-                    'conversation_context': conversation_context_for_db
-                }
-                db_service.update_search_session(session_id, session_updates)
-                
-                # Save clothing items and direct links for redo
-                clothing_items = cleaned_data.get('clothing_items', [])
-                if clothing_items:
-                    # Clear existing items for this session (redo replaces previous results)
-                    # This is a simplified approach - you might want more sophisticated handling
-                    success = db_service.save_clothing_items(session_id, clothing_items)
-                    
-                    if success and direct_links_extracted:
-                        from search_recommendation import save_direct_links_to_database
-                        link_stats = save_direct_links_to_database(
-                            cleaned_data=cleaned_data,
-                            session_id=session_id
-                        )
-                        if "error" not in link_stats:
-                            print(f"✅ Redo: Saved {link_stats.get('links_saved', 0)} direct links")
-                logger.info(f"Updated search session {session_id} for user {user_id}")
-                
-                # Save new clothing items and products
-                clothing_items = cleaned_data.get('clothing_items', [])
-                if clothing_items:
-                    success = db_service.save_clothing_items(session_id, clothing_items)
-                    if success:
-                        logger.info(f"Saved {len(clothing_items)} clothing items for session {session_id}")
-                    else:
-                        logger.error(f"Failed to save clothing items for session {session_id}")
-                        # Continue without failing the request
-            except Exception as e:
-                logger.error(f"Error updating search session {session_id}: {str(e)}")
-                # Continue without database updates
-        
-        # Prepare conversation context for JSON serialization (remove image_bytes)
-        updated_conversation_context = redo_result
-        if updated_conversation_context and 'image_bytes' in updated_conversation_context:
-            # Create a copy without image_bytes for JSON serialization
-            updated_conversation_context = {k: v for k, v in updated_conversation_context.items() if k != 'image_bytes'}
-        
+            conversation_context_for_db = {k: v for k, v in redo_result.items() if k != 'image_bytes'}
+            session_updates = {
+                'search_queries': new_queries,
+                'num_products_found': cleaned_data.get('summary', {}).get('total_products', 0),
+                'conversation_context': conversation_context_for_db
+            }
+            db_service.update_search_session(session_id, session_updates)
+            clothing_items = cleaned_data.get('clothing_items', [])
+            if clothing_items:
+                db_service.save_clothing_items(session_id, clothing_items)
+
+        updated_conversation_context = {k: v for k, v in redo_result.items() if k != 'image_bytes'}
+
         response_data = {
             'success': True,
             'new_queries': new_queries,
             'cleaned_data': cleaned_data,
-            'conversation_context': updated_conversation_context,  # Updated conversation context
+            'conversation_context': updated_conversation_context,
             'feedback_used': redo_result.get('feedback_used'),
-            'direct_links_extracted': direct_links_extracted
         }
-        
+
         return jsonify(response_data)
         
     except Exception as e:
