@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, memo } from "react";
+import { useMemo, memo, useEffect, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 import { ProductCard } from "./product-card";
 import { ProductGridSkeleton } from "./skeleton";
@@ -68,9 +68,14 @@ const RecommendationsDisplay = memo(function RecommendationsDisplay({
   // Get the first clothing type as default
   const defaultTab = clothingTypes[0];
 
+  // Create a key that changes when the data changes to force re-render
+  const componentKey = useMemo(() => {
+    return `tabs-${clothingTypes.join('-')}-${results.length}`;
+  }, [clothingTypes, results.length]);
+
   return (
     <div className="h-full flex flex-col">
-      <Tabs defaultValue={defaultTab} className="h-full flex flex-col">
+      <Tabs key={componentKey} defaultValue={defaultTab} className="h-full flex flex-col">
         {/* Tabs Navigation */}
         <div className="flex-shrink-0 mb-6">
           <div className="flex items-center justify-between mb-6">
