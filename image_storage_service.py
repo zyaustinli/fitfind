@@ -178,19 +178,34 @@ class ImageStorageService:
             Dict containing success status and image bytes
         """
         try:
+            logger.info(f"Attempting to download image from storage path: {storage_path}")
+            
             # Download the image from Supabase Storage
             result = self.client.storage.from_(self.bucket_name).download(storage_path)
             
+            logger.info(f"Download result type: {type(result)}")
+            
+            # Check if the result has an error attribute
             if hasattr(result, 'error') and result.error:
+                logger.error(f"Storage download error: {result.error}")
                 raise Exception(f"Storage download error: {result.error}")
             
-            return {
-                "success": True,
-                "image_bytes": result
-            }
+            # The result should be bytes directly
+            if isinstance(result, bytes):
+                logger.info(f"Successfully downloaded {len(result)} bytes from storage")
+                return {
+                    "success": True,
+                    "image_bytes": result
+                }
+            else:
+                logger.error(f"Unexpected result type from storage download: {type(result)}")
+                return {
+                    "success": False,
+                    "error": f"Unexpected result type: {type(result)}"
+                }
             
         except Exception as e:
-            logger.error(f"Error retrieving image bytes: {e}")
+            logger.error(f"Error retrieving image bytes from path '{storage_path}': {e}")
             return {
                 "success": False,
                 "error": str(e)

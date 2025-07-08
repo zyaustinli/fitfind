@@ -999,56 +999,129 @@ def redo_search():
         file_id = data.get('file_id')  # We need the file_id to reconstruct image_bytes
         session_id = data.get('session_id')  # Database session ID
         
+        # Validate required fields
+        if not conversation_context:
+            return jsonify({'error': 'Empty conversation context'}), 400
+        
+        if not file_id and not session_id:
+            return jsonify({'error': 'Missing file_id or session_id required for image retrieval'}), 400
+        
+        logger.info(f"Redo request: file_id={file_id}, session_id={session_id}, user_id={user_id}")
+        logger.info(f"Conversation context keys: {list(conversation_context.keys()) if conversation_context else 'None'}")
+        
         # If conversation_context doesn't have image_bytes, we need to reconstruct it
-        if conversation_context and 'image_bytes' not in conversation_context and file_id:
+        if conversation_context and 'image_bytes' not in conversation_context:
+            logger.info(f"Attempting to reconstruct image_bytes for file_id: {file_id}, session_id: {session_id}")
+            
             # Try to get the storage path from the session record
             storage_path = None
+            session_details = None
+            
             if session_id:
                 try:
                     # Get session details to find storage path
                     if user_id:
                         # For authenticated users, use the secure method
                         session_details = db_service.get_search_session_details(session_id, user_id)
+                        logger.info(f"Retrieved session details for authenticated user {user_id}")
                     else:
                         # For anonymous users, use the basic method (no user verification)
                         session_details = db_service.get_search_session(session_id)
+                        logger.info(f"Retrieved session details for anonymous user")
                     
                     if session_details:
                         storage_path = session_details.get('storage_path')
+                        logger.info(f"Found storage_path: {storage_path}")
+                        
+                        # Additional logging for debugging
+                        if storage_path:
+                            logger.info(f"Session has storage_path, will attempt Supabase retrieval")
+                        else:
+                            logger.warning(f"Session exists but has no storage_path (may be older session)")
+                            # For sessions without storage_path, we might need to try reconstruction
+                            if 'image_url' in session_details:
+                                logger.info(f"Session has image_url: {session_details['image_url']}")
+                    else:
+                        logger.warning(f"No session details found for session_id: {session_id}")
+                        
                 except Exception as e:
-                    logger.warning(f"Could not retrieve session details: {e}")
+                    logger.error(f"Error retrieving session details: {e}")
+            else:
+                logger.warning("No session_id provided for image retrieval")
             
             # If we have storage path, retrieve from Supabase Storage
             if storage_path:
                 try:
                     from image_storage_service import storage_service
+                    logger.info(f"Attempting to retrieve image from storage path: {storage_path}")
                     image_result = storage_service.get_image_bytes(storage_path)
+                    
                     if image_result.get('success'):
                         conversation_context['image_bytes'] = image_result['image_bytes']
                         logger.info(f"Successfully retrieved image bytes from storage for session {session_id}")
                     else:
                         logger.error(f"Failed to retrieve image from storage: {image_result.get('error')}")
+                        
                 except Exception as e:
-                    logger.error(f"Error retrieving image from storage: {e}")
+                    logger.error(f"Exception while retrieving image from storage: {e}")
+                    logger.error(f"Storage path was: {storage_path}")
+            else:
+                logger.warning("No storage_path found in session details")
             
-            # Fallback: try to find the uploaded image file in local folder (for older sessions)
-            if 'image_bytes' not in conversation_context:
+            # Fallback 1: For older sessions without storage_path, try to download from image_url
+            if 'image_bytes' not in conversation_context and session_details and 'image_url' in session_details:
+                image_url = session_details['image_url']
+                logger.info(f"Attempting fallback to download from image_url: {image_url}")
+                try:
+                    import requests
+                    response = requests.get(image_url, timeout=10)
+                    if response.status_code == 200:
+                        conversation_context['image_bytes'] = response.content
+                        logger.info(f"Successfully retrieved image bytes from image_url")
+                    else:
+                        logger.warning(f"Failed to download image from URL, status: {response.status_code}")
+                except Exception as e:
+                    logger.warning(f"Could not retrieve image from image_url: {e}")
+            
+            # Fallback 2: try to find the uploaded image file in local folder (for development/recent sessions)
+            if 'image_bytes' not in conversation_context and file_id:
+                logger.info(f"Attempting fallback to local file for file_id: {file_id}")
                 try:
                     upload_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
                                    if f.startswith(file_id)]
+                    logger.info(f"Found {len(upload_files)} files matching file_id in upload folder")
+                    
                     if upload_files:
                         image_path = os.path.join(app.config['UPLOAD_FOLDER'], upload_files[0])
+                        logger.info(f"Attempting to read image from: {image_path}")
+                        
                         # Read the raw image bytes (not base64 encoded)
                         with open(image_path, "rb") as image_file:
                             image_bytes = image_file.read()
                         conversation_context['image_bytes'] = image_bytes
                         logger.info(f"Successfully retrieved image bytes from local file for file_id {file_id}")
+                    else:
+                        logger.warning(f"No files found in upload folder matching file_id: {file_id}")
+                        
                 except Exception as e:
                     logger.warning(f"Could not retrieve image from local folder: {e}")
             
-            # If still no image_bytes, return error
+            # If still no image_bytes, return detailed error
             if 'image_bytes' not in conversation_context:
-                return jsonify({'error': 'Could not retrieve image data for redo operation. Image may have been deleted or is not accessible.'}), 400
+                error_details = {
+                    'file_id': file_id,
+                    'session_id': session_id,
+                    'user_id': user_id,
+                    'has_session_details': session_details is not None,
+                    'storage_path': storage_path,
+                    'checked_local_folder': file_id is not None
+                }
+                logger.error(f"Could not retrieve image data for redo operation. Details: {error_details}")
+                
+                return jsonify({
+                    'error': 'Could not retrieve image data for redo operation. Image may have been deleted or is not accessible.',
+                    'details': error_details
+                }), 400
         
         # Import the redo function
         from search_recommendation import redo_search_queries
