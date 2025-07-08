@@ -915,9 +915,11 @@ def upload_file():
             if session_record and result.get('cleaned_data'):
                 # Update session with results
                 conversation_context_for_db = result.get('conversation_context', {})
-                # Remove image_bytes for JSON serialization in database
+                # Remove image_bytes for JSON serialization in database but keep other essential fields
                 if conversation_context_for_db and 'image_bytes' in conversation_context_for_db:
+                    # Keep all fields except image_bytes
                     conversation_context_for_db = {k: v for k, v in conversation_context_for_db.items() if k != 'image_bytes'}
+                    logger.info(f"Storing conversation_context with fields: {list(conversation_context_for_db.keys())}")
                 
                 session_updates = {
                     'status': 'completed',
@@ -1122,6 +1124,41 @@ def redo_search():
                     'error': 'Could not retrieve image data for redo operation. Image may have been deleted or is not accessible.',
                     'details': error_details
                 }), 400
+        
+        # Validate and reconstruct conversation context structure
+        required_fields = ['conversation_history', 'image_bytes', 'system_prompt', 'model']
+        missing_fields = [field for field in required_fields if field not in conversation_context]
+        
+        if missing_fields:
+            logger.error(f"Missing required fields in conversation_context: {missing_fields}")
+            
+            # Try to reconstruct missing fields with defaults
+            if 'system_prompt' not in conversation_context:
+                # Use a default system prompt if missing
+                conversation_context['system_prompt'] = """You are a professional fashion researcher specializing in generating precise search queries for clothing identification. When provided with an image containing clothing items, you will analyze each piece and generate specific search queries that can be used to find near-identical replicas online."""
+                logger.info("Added default system_prompt to conversation_context")
+            
+            if 'model' not in conversation_context:
+                # Use default model if missing
+                conversation_context['model'] = 'gemini-2.5-flash-preview-05-20'
+                logger.info("Added default model to conversation_context")
+            
+            if 'conversation_history' not in conversation_context:
+                logger.error("conversation_history is missing and cannot be reconstructed")
+                return jsonify({
+                    'error': 'Invalid conversation context: missing conversation history',
+                    'details': {'missing_fields': missing_fields}
+                }), 400
+            
+            # image_bytes should have been reconstructed above
+            if 'image_bytes' not in conversation_context:
+                logger.error("image_bytes is missing and could not be reconstructed")
+                return jsonify({
+                    'error': 'Could not retrieve image data for redo operation',
+                    'details': {'missing_fields': missing_fields}
+                }), 400
+        
+        logger.info("Conversation context validation passed, calling redo_search_queries")
         
         # Import the redo function
         from search_recommendation import redo_search_queries
