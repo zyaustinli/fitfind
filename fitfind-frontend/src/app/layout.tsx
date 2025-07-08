@@ -5,6 +5,7 @@ import { NavigationProvider } from "@/contexts/NavigationContext";
 import { HistoryProvider } from "@/contexts/HistoryContext";
 import { ToastProvider } from "@/components/ui/toast";
 import { Sidebar } from "@/components/layout/sidebar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export const metadata: Metadata = {
   title: "FitFind - Fashion Discovery",
@@ -19,20 +20,24 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased" suppressHydrationWarning={true}>
-        <ToastProvider>
-          <AuthProvider>
-            <HistoryProvider>
-              <NavigationProvider>
-                <div className="flex h-screen bg-background">
-                  <Sidebar />
-                  <main className="flex-1 overflow-auto">
-                    {children}
-                  </main>
-                </div>
-              </NavigationProvider>
-            </HistoryProvider>
-          </AuthProvider>
-        </ToastProvider>
+        <ErrorBoundary>
+          <ToastProvider>
+            <AuthProvider>
+              <HistoryProvider>
+                <NavigationProvider>
+                  <div className="flex h-screen bg-background">
+                    <Sidebar />
+                    <main className="flex-1 overflow-auto">
+                      <ErrorBoundary>
+                        {children}
+                      </ErrorBoundary>
+                    </main>
+                  </div>
+                </NavigationProvider>
+              </HistoryProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

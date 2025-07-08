@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 import { ProductCard } from "./product-card";
+import { ProductGridSkeleton } from "./skeleton";
 import { groupProductsByType } from "@/lib/data-transform";
 import { Button } from "./button";
 import { Card } from "./card";
@@ -18,7 +19,7 @@ interface RecommendationsDisplayProps {
   isItemSaved?: (item: ClothingItem) => boolean;
 }
 
-export function RecommendationsDisplay({
+const RecommendationsDisplay = memo(function RecommendationsDisplay({
   results,
   backendData,
   onSave,
@@ -152,4 +153,6 @@ export function RecommendationsDisplay({
       </Tabs>
     </div>
   );
-} 
+});
+
+export { RecommendationsDisplay };

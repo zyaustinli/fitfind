@@ -12,8 +12,22 @@ from search_recommendation import outfit_recommendation_with_cleaned_data
 import traceback
 from datetime import datetime
 import logging
+import gzip
+from functools import wraps
 
 # Setup logging
+if os.getenv('FLASK_ENV') == 'production':
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler('fitfind.log')
+        ]
+    )
+else:
+    logging.basicConfig(level=logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 # Import database and auth services
@@ -21,6 +35,12 @@ from database_service import db_service
 from auth_middleware import require_auth, optional_auth, get_current_user, get_current_user_id, is_authenticated
 
 app = Flask(__name__)
+
+# Production security configuration
+if os.getenv('FLASK_ENV') == 'production':
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Configure CORS based on environment
 if os.getenv('FLASK_ENV') == 'production':
@@ -30,6 +50,22 @@ if os.getenv('FLASK_ENV') == 'production':
 else:
     # In development, allow all origins
     CORS(app)
+
+# Add security headers
+@app.after_request
+def after_request(response):
+    if os.getenv('FLASK_ENV') == 'production':
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        response.headers['Content-Security-Policy'] = "default-src 'self'"
+    
+    # Enable compression for text responses
+    if response.content_type.startswith('text/') or response.content_type.startswith('application/json'):
+        response.headers['Vary'] = 'Accept-Encoding'
+    
+    return response
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -48,6 +84,26 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Production error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    if os.getenv('FLASK_ENV') == 'production':
+        logger.error(f"Internal server error: {error}")
+        return jsonify({'error': 'Internal server error'}), 500
+    return jsonify({'error': str(error)}), 500
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'error': 'File too large. Maximum size is 16MB'}), 413
+
+@app.errorhandler(429)
+def ratelimit_handler(error):
+    return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
 
 def setup_db_context():
     """Helper function to set up database context for authenticated requests"""
@@ -945,15 +1001,54 @@ def redo_search():
         
         # If conversation_context doesn't have image_bytes, we need to reconstruct it
         if conversation_context and 'image_bytes' not in conversation_context and file_id:
-            # Find the uploaded image file
-            upload_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
-                           if f.startswith(file_id)]
-            if upload_files:
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], upload_files[0])
-                # Read the raw image bytes (not base64 encoded)
-                with open(image_path, "rb") as image_file:
-                    image_bytes = image_file.read()
-                conversation_context['image_bytes'] = image_bytes
+            # Try to get the storage path from the session record
+            storage_path = None
+            if session_id:
+                try:
+                    # Get session details to find storage path
+                    if user_id:
+                        # For authenticated users, use the secure method
+                        session_details = db_service.get_search_session_details(session_id, user_id)
+                    else:
+                        # For anonymous users, use the basic method (no user verification)
+                        session_details = db_service.get_search_session(session_id)
+                    
+                    if session_details:
+                        storage_path = session_details.get('storage_path')
+                except Exception as e:
+                    logger.warning(f"Could not retrieve session details: {e}")
+            
+            # If we have storage path, retrieve from Supabase Storage
+            if storage_path:
+                try:
+                    from image_storage_service import storage_service
+                    image_result = storage_service.get_image_bytes(storage_path)
+                    if image_result.get('success'):
+                        conversation_context['image_bytes'] = image_result['image_bytes']
+                        logger.info(f"Successfully retrieved image bytes from storage for session {session_id}")
+                    else:
+                        logger.error(f"Failed to retrieve image from storage: {image_result.get('error')}")
+                except Exception as e:
+                    logger.error(f"Error retrieving image from storage: {e}")
+            
+            # Fallback: try to find the uploaded image file in local folder (for older sessions)
+            if 'image_bytes' not in conversation_context:
+                try:
+                    upload_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) 
+                                   if f.startswith(file_id)]
+                    if upload_files:
+                        image_path = os.path.join(app.config['UPLOAD_FOLDER'], upload_files[0])
+                        # Read the raw image bytes (not base64 encoded)
+                        with open(image_path, "rb") as image_file:
+                            image_bytes = image_file.read()
+                        conversation_context['image_bytes'] = image_bytes
+                        logger.info(f"Successfully retrieved image bytes from local file for file_id {file_id}")
+                except Exception as e:
+                    logger.warning(f"Could not retrieve image from local folder: {e}")
+            
+            # If still no image_bytes, return error
+            if 'image_bytes' not in conversation_context:
+                return jsonify({'error': 'Could not retrieve image data for redo operation. Image may have been deleted or is not accessible.'}), 400
         
         # Import the redo function
         from search_recommendation import redo_search_queries

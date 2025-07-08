@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { Heart, ExternalLink, Star, ShoppingBag } from "lucide-react";
 import { cn, formatPrice, truncateText } from "@/lib/utils";
 import { Button } from "./button";
@@ -15,7 +15,7 @@ interface ProductCardProps {
   hideSearchQuery?: boolean;
 }
 
-export function ProductCard({ 
+const ProductCard = memo(function ProductCard({ 
   item, 
   onSave, 
   onRemove, 
@@ -69,11 +69,13 @@ export function ProductCard({
                 "w-full h-full object-cover transition-opacity duration-300",
                 imageLoaded ? "opacity-100" : "opacity-0"
               )}
+              loading="lazy"
+              decoding="async"
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
             />
             {!imageLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-muted">
                 <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
             )}
@@ -198,4 +200,6 @@ export function ProductCard({
       </div>
     </div>
   );
-} 
+});
+
+export { ProductCard };

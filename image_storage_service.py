@@ -167,6 +167,35 @@ class ImageStorageService:
                 "error": str(e)
             }
     
+    def get_image_bytes(self, storage_path: str) -> Dict[str, Any]:
+        """
+        Retrieve image bytes from Supabase Storage
+        
+        Args:
+            storage_path: The storage path of the image to retrieve
+            
+        Returns:
+            Dict containing success status and image bytes
+        """
+        try:
+            # Download the image from Supabase Storage
+            result = self.client.storage.from_(self.bucket_name).download(storage_path)
+            
+            if hasattr(result, 'error') and result.error:
+                raise Exception(f"Storage download error: {result.error}")
+            
+            return {
+                "success": True,
+                "image_bytes": result
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving image bytes: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
     def health_check(self) -> Dict[str, Any]:
         """
         Check if storage service is healthy
