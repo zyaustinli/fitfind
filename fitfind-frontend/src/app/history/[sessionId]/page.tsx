@@ -12,6 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
 import { useWishlist } from "@/hooks/useWishlist"; // Import the wishlist hook
+import { useSaveNotification } from "@/hooks/useSaveNotification";
+import { SaveNotification } from "@/components/ui/save-notification";
 import { useToast } from "@/components/ui/toast";
 import type { SearchHistoryItem, ClothingItem, BackendCleanedData } from "@/types";
 import { redoSearch } from "@/lib/api";
@@ -67,6 +69,7 @@ export default function SearchSessionDetailPage() {
   });
 
   const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
+  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
   
   const [sessionItem, setSessionItem] = useState<SearchHistoryItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -333,7 +336,10 @@ export default function SearchSessionDetailPage() {
       return;
     }
     if (product.product_id) {
-      await addItem(product.product_id);
+      const success = await addItem(product.product_id);
+      if (success) {
+        showSaveNotification(product);
+      }
     }
   };
 
@@ -624,6 +630,13 @@ export default function SearchSessionDetailPage() {
         item={sessionItem}
         onConfirm={handleConfirmDelete}
         loading={isDeleting}
+      />
+      
+      <SaveNotification
+        show={showNotification}
+        onClose={hideSaveNotification}
+        savedItem={savedItem}
+        message={notificationMessage}
       />
     </div>
   );

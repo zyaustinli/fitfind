@@ -6,6 +6,8 @@ import { ArrowLeft, Edit3, Trash2, Settings, FolderHeart, Share2 } from "lucide-
 import { useAuth } from "@/contexts/AuthContext";
 import { useCollections } from "@/hooks/useCollections";
 import { removeFromWishlist, addToWishlist } from "@/lib/api";
+import { useSaveNotification } from "@/hooks/useSaveNotification";
+import { SaveNotification } from "@/components/ui/save-notification";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -13,7 +15,7 @@ import {
   WishlistEmpty 
 } from "@/components/wishlist";
 import { EditCollectionModal, DeleteCollectionModal } from "@/components/collections";
-import type { WishlistItemDetailed } from "@/types";
+import type { WishlistItemDetailed, ClothingItem } from "@/types";
 
 export default function CollectionDetailPage() {
   const params = useParams();
@@ -29,6 +31,8 @@ export default function CollectionDetailPage() {
   const [unsavedItems, setUnsavedItems] = useState<Set<string>>(new Set());
   // Track items that are in the process of being saved/unsaved
   const [processingItems, setProcessingItems] = useState<Set<string>>(new Set());
+  
+  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const {
     currentCollection,
@@ -146,6 +150,22 @@ export default function CollectionDetailPage() {
         console.error('Failed to re-save item to database:', response.error);
       } else {
         console.log('Item re-saved to database');
+        // Show save notification with the item converted to ClothingItem format
+        const clothingItem: ClothingItem = {
+          query: item.products.category || '',
+          title: item.products.title,
+          link: item.products.product_url,
+          price: item.products.price,
+          extracted_price: parseFloat(item.products.price || '0'),
+          source: item.products.source,
+          rating: item.products.rating,
+          reviews: item.products.review_count,
+          thumbnail: item.products.image_url,
+          product_id: item.products.external_id || item.products.id,
+          shipping: item.products.delivery_info,
+          tag: item.products.category
+        };
+        showSaveNotification(clothingItem, 'Added to favorites');
       }
     } catch (error) {
       // Rollback optimistic update on error - mark as unsaved again
@@ -407,6 +427,13 @@ export default function CollectionDetailPage() {
             onDeleteCollection={handleDeleteCollection}
           />
         )}
+        
+        <SaveNotification
+          show={showNotification}
+          onClose={hideSaveNotification}
+          savedItem={savedItem}
+          message={notificationMessage}
+        />
       </div>
     </div>
   );

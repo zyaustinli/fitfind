@@ -11,6 +11,8 @@ import { uploadOutfitImage, redoSearch, ApiError } from "@/lib/api";
 import { transformBackendData } from "@/lib/data-transform";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWishlist } from "@/hooks/useWishlist";
+import { useSaveNotification } from "@/hooks/useSaveNotification";
+import { SaveNotification } from "@/components/ui/save-notification";
 import { cn } from "@/lib/utils";
 import type { UploadedImage, ClothingItem, SearchSession, BackendUploadResponse } from "@/types";
 
@@ -31,6 +33,7 @@ export default function Home() {
 
   const { user } = useAuth();
   const { addItem, removeItem, isInWishlist } = useWishlist({});
+  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
     setUploadedImage(image);
@@ -145,9 +148,12 @@ export default function Home() {
       return;
     }
     if (item.product_id) {
-      await addItem(item.product_id);
+      const success = await addItem(item.product_id);
+      if (success) {
+        showSaveNotification(item);
+      }
     }
-  }, [user, addItem]);
+  }, [user, addItem, showSaveNotification]);
 
   const handleRemoveItem = useCallback(async (item: ClothingItem) => {
     if (!user) return;
@@ -399,5 +405,12 @@ export default function Home() {
         )}
       </div>
     </div>
+
+    <SaveNotification
+      show={showNotification}
+      onClose={hideSaveNotification}
+      savedItem={savedItem}
+      message={notificationMessage}
+    />
   );
 }
