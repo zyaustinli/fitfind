@@ -10,7 +10,7 @@ FitFind is a web application that analyzes outfit photos and helps users find si
 - 🎯 **Filtering & Sorting**: Filter by price, sale items, and sort by various criteria
 - 🔄 **Redo Functionality**: Improve search results with custom feedback
 - 📱 **Responsive Design**: Works on desktop, tablet, and mobile devices
-- 🛒 **Direct Shopping**: Click through to purchase items from retailers
+- 🛒 **Easy Shopping**: Click through to purchase items from Google Shopping
 
 ## Technology Stack
 
@@ -132,7 +132,7 @@ If the initial search results aren't quite right:
 #### Product Details
 - Click on any product card to open a detailed modal
 - View larger images, full descriptions, and all available information
-- Direct links to purchase from the original retailer
+- Links to purchase from Google Shopping
 
 ## API Endpoints
 

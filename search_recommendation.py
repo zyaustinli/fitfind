@@ -77,13 +77,21 @@ For each clothing piece, create a google shopping search query (10-15 words max)
 4. STYLE CONTEXT (helps algorithm understand the aesthetic)
 - Style category when relevant (e.g., "casual," "formal," "vintage-inspired," "minimalist")
 
+5. BRAND SPECIFIC DETAILS (if relevant)
+- Brand names if logo is identifiable. 
+- Brand specific items: if you are able to identify the name of a piece, simply use that as the search query (along with minor details like color). For example, if the image contains a blue Adidas Chinese New Year Jacket, then you should return "blue Adidas Chinese New Year Jacket" as the search query, rather than "blue Adidas track jacket", as this would likely yield a lot of irrelevant results. 
+
 SEARCH QUERY REQUIREMENTS:
-- Start with item type + gender
-- Include 2-3 most distinctive visual features
+- If you know the exact name of the item, use that as the search query. 
+- Start with item type + gender (unless non-gender specific)
+- Include most distinctive visual features. However, be careful on which features to include. Adding too many unnecessary features will likely yield irrelevant results. Think in the perspective of the search engine.
 - Use fashion industry terminology
 - Avoid generic descriptors like "nice" or "stylish"
 - Focus on features that are immediately visible, distinctive, and searchable
 - Use terms that online retailers commonly use in product descriptions
+
+
+Remember, your search query will be input into Google's search engine, so think carefully about how to format your query. 
 
 OUTPUT FORMAT:
 Always return your response as a JSON array of strings, with each string being a search query for one clothing piece. Format: ["search query 1", "search query 2", "search query 3"]. If no clothing items are identified, return an empty array, like so: [].
