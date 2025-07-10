@@ -1,19 +1,17 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { History, AlertCircle, Sparkles, Clock, RefreshCw, CheckSquare, X, MoreHorizontal } from "lucide-react";
+import { History, AlertCircle, Sparkles, RefreshCw, CheckSquare, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
-import { useWishlist } from "@/hooks/useWishlist"; // Import the wishlist hook
 import { useToast } from "@/components/ui/toast";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { SearchHistoryCard, ConfirmDeleteDialog } from "@/components/history";
 import { ConfirmBulkDeleteDialog } from "@/components/history/ConfirmBulkDeleteDialog";
 import { SearchHistoryFilters } from "@/components/history/SearchHistoryFilters";
-import type { SearchHistoryItem, ClothingItem } from "@/types";
+import type { SearchHistoryItem } from "@/types";
 import { redoSearch } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -38,7 +36,6 @@ export default function HistoryPage() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const historyContext = useHistoryContext();
-  const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
   const [deleteState, setDeleteState] = useState<DeleteState>({
     isOpen: false,
@@ -56,10 +53,8 @@ export default function HistoryPage() {
   const router = useRouter();
 
   const {
-    history,
     loading: historyLoading,
     error: historyError,
-    pagination,
     filteredHistory,
     filters,
     hasMore,
@@ -67,16 +62,13 @@ export default function HistoryPage() {
     totalCount,
     isOnline,
     queuedOperationsCount,
-    fetchHistory,
     loadMore,
     refresh,
     setFilters,
     resetFilters,
     deleteHistoryItem,
-    undoDelete,
     bulkDelete,
     isItemDeleting,
-    canUndo,
     clearAllPendingOperations
   } = useSearchHistory({
     autoFetch: true,
@@ -294,32 +286,6 @@ export default function HistoryPage() {
       });
     }
   }, [refresh, toast]);
-
-  // Product save/remove handlers using wishlist hook
-  const handleSaveProduct = useCallback(async (product: ClothingItem) => {
-    if (!user) {
-      toast({
-        type: "error",
-        title: "Sign In Required",
-        description: "Please sign in to save items to your wishlist."
-      });
-      return;
-    }
-    if (product.product_id) {
-      await addItem(product.product_id);
-    }
-  }, [user, toast, addItem]);
-
-  const handleRemoveProduct = useCallback(async (product: ClothingItem) => {
-    if (!user) return;
-    if (product.product_id) {
-      await removeItem(product.product_id);
-    }
-  }, [user, removeItem]);
-
-  const isProductSaved = useCallback((product: ClothingItem) => {
-    return product.product_id ? isInWishlist(product.product_id) : false;
-  }, [isInWishlist]);
 
   // Early return for loading state
   if (loading && !user) {
@@ -575,6 +541,7 @@ export default function HistoryPage() {
         onConfirm={handleConfirmBulkDelete}
         loading={bulkDeleteState.loading}
       />
+
     </>
   );
 } 

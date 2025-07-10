@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddToCollectionModal } from "@/components/collections/AddToCollectionModal";
-import { ClothingItem } from "@/types";
+import { ClothingItem, WishlistItemDetailed } from "@/types";
 
 interface SaveNotificationProps {
   show: boolean;
@@ -14,6 +14,36 @@ interface SaveNotificationProps {
   savedItem: ClothingItem | null;
   message?: string;
 }
+
+// Convert ClothingItem to WishlistItemDetailed for the modal
+const convertToWishlistItem = (item: ClothingItem): WishlistItemDetailed => {
+  return {
+    id: item.product_id || `temp-${Date.now()}`,
+    user_id: "current-user", // This will be populated by the backend
+    product_id: item.product_id || "",
+    notes: null,
+    tags: item.tag ? [item.tag] : [],
+    created_at: new Date().toISOString(),
+    products: {
+      id: item.product_id || `temp-${Date.now()}`,
+      clothing_item_id: "",
+      external_id: item.product_id,
+      title: item.title || "Untitled Product",
+      price: item.extracted_price,
+      old_price: null,
+      discount_percentage: null,
+      image_url: item.thumbnail,
+      product_url: item.link,
+      source: item.source || "",
+      source_icon: null,
+      rating: item.rating,
+      review_count: item.reviews,
+      delivery_info: item.shipping,
+      tags: item.tag ? [item.tag] : [],
+      created_at: new Date().toISOString(),
+    }
+  };
+};
 
 export function SaveNotification({
   show,
@@ -40,7 +70,14 @@ export function SaveNotification({
     setIsVisible(false);
   };
 
-  const handleCollectionModalClose = () => {
+  const handleCollectionModalClose = (open: boolean) => {
+    setShowCollectionModal(open);
+    if (!open) {
+      onClose();
+    }
+  };
+
+  const handleSuccess = () => {
     setShowCollectionModal(false);
     onClose();
   };
@@ -77,10 +114,10 @@ export function SaveNotification({
 
       {savedItem && (
         <AddToCollectionModal
-          isOpen={showCollectionModal}
-          onClose={handleCollectionModalClose}
-          item={savedItem}
-          initiallyInWishlist={true}
+          open={showCollectionModal}
+          onOpenChange={handleCollectionModalClose}
+          item={convertToWishlistItem(savedItem)}
+          onSuccess={handleSuccess}
         />
       )}
     </>

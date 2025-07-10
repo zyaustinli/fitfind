@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Clock } from "lucide-react";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
@@ -110,7 +110,7 @@ export default function Home() {
         throw new Error(response.error || 'Failed to analyze image');
       }
 
-      const transformedResults = transformBackendData(response.cleaned_data);
+      const transformedResults = transformBackendData(response);
 
       setSearchSession({
         ...initialSession,
@@ -188,7 +188,7 @@ export default function Home() {
         throw new Error(response.error || 'Failed to redo search');
       }
 
-      const transformedResults = transformBackendData(response.cleaned_data);
+      const transformedResults = transformBackendData(response);
 
       setSearchSession(prev => prev ? {
         ...prev,
