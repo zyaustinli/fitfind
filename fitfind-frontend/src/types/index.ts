@@ -166,7 +166,9 @@ export interface WishlistResponse {
 
 export interface WishlistAddResponse {
   success: boolean;
-  wishlist_item?: WishlistItemDetailed;
+  item?: WishlistItemDetailed;
+  wishlist_item?: WishlistItemDetailed; // Keep for backwards compatibility
+  message?: string;
   error?: string;
 }
 

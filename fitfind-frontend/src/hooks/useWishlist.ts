@@ -195,12 +195,13 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
       const response: WishlistAddResponse = await addToWishlist(productId, notes, tags);
       console.log('useWishlist.addItem: API response:', response);
       
-      if (response.success && response.wishlist_item) {
+      const wishlistItem = response.item || response.wishlist_item;
+      if (response.success && wishlistItem) {
         // Add the new item to the wishlist if it's not already there
         setWishlist(prev => {
           const exists = prev.some(item => item.products.id === productId);
           if (exists) return prev;
-          return [response.wishlist_item!, ...prev];
+          return [wishlistItem!, ...prev];
         });
         
         // Update pagination count

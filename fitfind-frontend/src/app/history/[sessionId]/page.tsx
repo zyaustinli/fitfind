@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, RotateCcw, Share2, Calendar, Clock, CheckCircle, Loader, AlertTriangle, ImageIcon, Trash2 } from "lucide-react";
 import { cn, formatDistanceToNow } from "@/lib/utils";
@@ -350,9 +350,9 @@ export default function SearchSessionDetailPage() {
     }
   };
 
-  const isProductSaved = (product: ClothingItem) => {
+  const isProductSaved = useCallback((product: ClothingItem) => {
     return product.product_id ? isInWishlist(product.product_id) : false;
-  };
+  }, [isInWishlist]);
 
   // Loading state
   if (authLoading || loading) {
