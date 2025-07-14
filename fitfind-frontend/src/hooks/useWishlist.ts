@@ -33,6 +33,7 @@ export interface UseWishlistReturn {
   // State
   loading: LoadingState;
   error: ErrorState;
+  isInitialLoadComplete: boolean;
   
   // Actions
   fetchWishlist: (options?: { reset?: boolean }) => Promise<void>;
@@ -72,6 +73,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   });
   const [filters, setFiltersState] = useState<WishlistFilters>(defaultFilters);
   const [wishlistStatus, setWishlistStatus] = useState<Record<string, boolean>>({});
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   
   // UI state
   const [loading, setLoading] = useState<LoadingState>({
@@ -137,6 +139,11 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
           statusUpdates[item.products.id] = true;
         });
         setWishlistStatus(prev => ({ ...prev, ...statusUpdates }));
+        
+        // Mark initial load as complete on first fetch
+        if (reset) {
+          setIsInitialLoadComplete(true);
+        }
       } else {
         throw new Error(response.error || 'Failed to fetch wishlist');
       }
@@ -480,6 +487,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     // State
     loading,
     error,
+    isInitialLoadComplete,
     
     // Actions
     fetchWishlist,

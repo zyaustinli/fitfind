@@ -26,10 +26,6 @@ const ProductCard = memo(function ProductCard({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   
-  // Debug logging for saved status
-  if (isSaved) {
-    console.log(`DEBUG: ProductCard for "${item.title}" (ID: ${item.product_id}) rendered with isSaved=true`);
-  }
 
   const handleSaveToggle = () => {
     if (isSaved && onRemove) {

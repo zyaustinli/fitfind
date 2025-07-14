@@ -32,7 +32,7 @@ export default function Home() {
   });
 
   const { user } = useAuth();
-  const { addItem, removeItem, isInWishlist, checkStatus } = useWishlist({});
+  const { addItem, removeItem, isInWishlist, checkStatus, isInitialLoadComplete } = useWishlist({});
   const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
@@ -392,13 +392,17 @@ export default function Home() {
         {/* Results Section */}
         <div className="flex-1 p-8 bg-muted/30">
           {searchSession?.status === 'completed' && searchSession.results && searchSession.results.length > 0 ? (
-            <RecommendationsDisplay
-              results={searchSession.results}
-              backendData={searchSession.backendData}
-              onSave={handleSaveItem}
-              onRemove={handleRemoveItem}
-              isItemSaved={isItemSaved}
-            />
+            isInitialLoadComplete ? (
+              <RecommendationsDisplay
+                results={searchSession.results}
+                backendData={searchSession.backendData}
+                onSave={handleSaveItem}
+                onRemove={handleRemoveItem}
+                isItemSaved={isItemSaved}
+              />
+            ) : (
+              <ProductGridSkeleton />
+            )
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <div className="mb-8">
