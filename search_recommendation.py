@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
 
 def encode_image(image_path):
@@ -120,7 +120,8 @@ EXAMPLE OUTPUTS:
         }
         
         # Generate response using the system_instruction in config
-        response = genai_client.models.generate_content(
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
             model='gemini-2.5-flash-preview-05-20',
             contents=[initial_content],
             config=GenerateContentConfig(
@@ -246,7 +247,8 @@ Please provide new search queries in the same JSON array format. Make sure to in
                 api_conversation.append(msg)
         
         # Generate new response
-        response = genai_client.models.generate_content(
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
             model=conversation_context["model"],
             contents=api_conversation,
             config=GenerateContentConfig(
@@ -1431,26 +1433,39 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
             
             # Collect all external IDs from the cleaned data
             external_ids = []
-            for item_type, products in cleaned_data.items():
-                for product in products:
-                    if product.get('external_id'):
-                        external_ids.append(product['external_id'])
+            if 'clothing_items' in cleaned_data:
+                for clothing_item in cleaned_data['clothing_items']:
+                    if 'products' in clothing_item:
+                        for product in clothing_item['products']:
+                            if isinstance(product, dict) and product.get('id'):
+                                external_ids.append(product['id'])
+                                # Also add external_id field for database lookup
+                                product['external_id'] = product['id']
             
             # Get bulk wishlist status
             wishlist_status = db_service.check_bulk_wishlist_status(user_id, external_ids)
             
             # Add is_saved field to each product
-            for item_type, products in cleaned_data.items():
-                for product in products:
-                    external_id = product.get('external_id')
-                    product['is_saved'] = wishlist_status.get(external_id, False)
+            if 'clothing_items' in cleaned_data:
+                for clothing_item in cleaned_data['clothing_items']:
+                    if 'products' in clothing_item:
+                        for product in clothing_item['products']:
+                            if isinstance(product, dict):
+                                external_id = product.get('external_id')
+                                product['is_saved'] = wishlist_status.get(external_id, False)
             
         except Exception as e:
             print(f"Warning: Failed to check wishlist status: {e}")
             # If wishlist check fails, continue without saved status
-            for item_type, products in cleaned_data.items():
-                for product in products:
-                    product['is_saved'] = False
+            if 'clothing_items' in cleaned_data:
+                for clothing_item in cleaned_data['clothing_items']:
+                    if 'products' in clothing_item:
+                        for product in clothing_item['products']:
+                            if isinstance(product, dict):
+                                # Add external_id field for consistency
+                                if 'external_id' not in product and product.get('id'):
+                                    product['external_id'] = product['id']
+                                product['is_saved'] = False
     
     update_progress("Finalizing results...")
     
