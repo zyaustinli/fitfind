@@ -181,13 +181,19 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     notes?: string, 
     tags?: string[]
   ): Promise<boolean> => {
-    if (!user) return false;
+    if (!user) {
+      console.log('useWishlist.addItem: No user found');
+      return false;
+    }
 
+    console.log('useWishlist.addItem: Starting save for productId:', productId);
     // Optimistic update
     setWishlistStatus(prev => ({ ...prev, [productId]: true }));
     
     try {
+      console.log('useWishlist.addItem: Calling addToWishlist API');
       const response: WishlistAddResponse = await addToWishlist(productId, notes, tags);
+      console.log('useWishlist.addItem: API response:', response);
       
       if (response.success && response.wishlist_item) {
         // Add the new item to the wishlist if it's not already there
@@ -203,11 +209,14 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
           total_count: (prev.total_count || 0) + 1
         }));
         
+        console.log('useWishlist.addItem: Successfully saved item, returning true');
         return true;
       } else {
+        console.log('useWishlist.addItem: API response indicates failure:', response.error);
         throw new Error(response.error || 'Failed to add item to wishlist');
       }
     } catch (err) {
+      console.log('useWishlist.addItem: Error occurred:', err);
       // Revert optimistic update
       setWishlistStatus(prev => ({ ...prev, [productId]: false }));
       
@@ -217,6 +226,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         message,
         code: undefined
       });
+      console.log('useWishlist.addItem: Returning false due to error');
       return false;
     }
   }, [user]);
