@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Clock } from "lucide-react";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
