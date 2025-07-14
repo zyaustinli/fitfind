@@ -412,6 +412,8 @@ class DatabaseService:
         try:
             internal_product_uuid = None
 
+            print(f"DEBUG: Checking if product_id '{product_id}' is in wishlist for user {user_id}")
+
             # The frontend might send an internal UUID from collection/history pages,
             # or an external_id from the main search page. We handle both.
             if self._is_valid_uuid(product_id):
@@ -431,14 +433,20 @@ class DatabaseService:
                     internal_product_uuid = product_response.data[0]['id']
 
             if not internal_product_uuid:
+                print(f"DEBUG: Product '{product_id}' not found in database")
                 return False # Product doesn't exist
+
+            print(f"DEBUG: Found product with internal UUID: {internal_product_uuid}")
 
             response = (self.service_client.table("user_saved_items")
                        .select("id")
                        .eq("user_id", user_id)
                        .eq("product_id", internal_product_uuid)
                        .execute())
-            return bool(response.data)
+            
+            is_saved = bool(response.data)
+            print(f"DEBUG: Product {product_id} is {'SAVED' if is_saved else 'NOT SAVED'}")
+            return is_saved
         except Exception as e:
             logger.error(f"Error checking wishlist: {e}")
             return False
