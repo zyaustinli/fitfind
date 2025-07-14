@@ -68,7 +68,7 @@ export default function SearchSessionDetailPage() {
     enableUndo: false
   });
 
-  const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
+  const { addItem, removeItem, isInWishlist, checkStatus } = useWishlist({}); // Use the wishlist hook
   const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
   
   const [sessionItem, setSessionItem] = useState<SearchHistoryItem | null>(null);
@@ -142,6 +142,19 @@ export default function SearchSessionDetailPage() {
 
     loadSessionDetails();
   }, [user, sessionId, getSessionDetails, historyContext]);
+
+  // Check wishlist status for all products when results are loaded
+  useEffect(() => {
+    if (!user || transformedResults.length === 0) return;
+
+    const productIds = transformedResults
+      .filter(product => product.product_id)
+      .map(product => product.product_id!);
+
+    if (productIds.length > 0) {
+      checkStatus(productIds);
+    }
+  }, [transformedResults, user, checkStatus]);
 
   // Transform clothing items to ClothingItem format for RecommendationsDisplay
   const transformedResults: ClothingItem[] = useMemo(() => {

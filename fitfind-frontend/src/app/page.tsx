@@ -32,7 +32,7 @@ export default function Home() {
   });
 
   const { user } = useAuth();
-  const { addItem, removeItem, isInWishlist } = useWishlist({});
+  const { addItem, removeItem, isInWishlist, checkStatus } = useWishlist({});
   const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
@@ -172,6 +172,19 @@ export default function Home() {
   const isItemSaved = useCallback((item: ClothingItem) => {
     return item.product_id ? isInWishlist(item.product_id) : false;
   }, [isInWishlist]);
+
+  // Check wishlist status for all products when search results are loaded
+  useEffect(() => {
+    if (!user || !searchSession?.results || searchSession.results.length === 0) return;
+
+    const productIds = searchSession.results
+      .filter(product => product.product_id)
+      .map(product => product.product_id!);
+
+    if (productIds.length > 0) {
+      checkStatus(productIds);
+    }
+  }, [searchSession?.results, user, checkStatus]);
 
   const handleRedoSearch = async () => {
     if (!searchSession?.conversationContext) return;

@@ -5,6 +5,7 @@ import { History, AlertCircle, Sparkles, RefreshCw, CheckSquare, X } from "lucid
 import { useAuth } from "@/contexts/AuthContext";
 import { useHistoryContext, useHistoryEvents } from "@/contexts/HistoryContext";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useWishlist } from "@/hooks/useWishlist";
 import { useToast } from "@/components/ui/toast";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,8 @@ export default function HistoryPage() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkOperationMode, setBulkOperationMode] = useState(false);
   const router = useRouter();
+
+  const { checkStatus } = useWishlist({});
 
   const {
     loading: historyLoading,
@@ -100,6 +103,30 @@ export default function HistoryPage() {
       timestamp: new Date().toISOString()
     });
   }, [user, loading, isOnline, queuedOperationsCount]);
+
+  // Check wishlist status for all products in history
+  useEffect(() => {
+    if (!user || filteredHistory.length === 0) return;
+
+    const productIds: string[] = [];
+    filteredHistory.forEach(historyItem => {
+      if (historyItem.search_sessions.clothing_items) {
+        historyItem.search_sessions.clothing_items.forEach(clothingItem => {
+          if (clothingItem.products) {
+            clothingItem.products.forEach(product => {
+              if (product.external_id) {
+                productIds.push(product.external_id);
+              }
+            });
+          }
+        });
+      }
+    });
+
+    if (productIds.length > 0) {
+      checkStatus(productIds);
+    }
+  }, [filteredHistory, user, checkStatus]);
 
   // Handle view actions
   const handleViewItem = useCallback(async (item: SearchHistoryItem) => {
