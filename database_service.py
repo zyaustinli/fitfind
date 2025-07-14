@@ -413,6 +413,10 @@ class DatabaseService:
             internal_product_uuid = None
 
             print(f"DEBUG: Checking if product_id '{product_id}' is in wishlist for user {user_id}")
+            
+            # Special debug for the product we know is saved
+            if product_id == "5142907255860610215":
+                print(f"DEBUG: *** SPECIAL CHECK for known saved product {product_id} ***")
 
             # The frontend might send an internal UUID from collection/history pages,
             # or an external_id from the main search page. We handle both.

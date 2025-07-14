@@ -145,7 +145,7 @@ const RecommendationsDisplay = memo(function RecommendationsDisplay({
                         item={item}
                         onSave={onSave}
                         onRemove={onRemove}
-                        isSaved={item.is_saved || false}
+                        isSaved={isItemSaved ? isItemSaved(item) : false}
                         hideSearchQuery={true}
                       />
                     ))}
