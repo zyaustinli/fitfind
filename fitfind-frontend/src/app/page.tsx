@@ -110,7 +110,7 @@ export default function Home() {
         throw new Error(response.error || 'Failed to analyze image');
       }
 
-      const transformedResults = transformBackendData(response);
+      const transformedResults = transformBackendData(response.cleaned_data);
 
       setSearchSession({
         ...initialSession,
@@ -188,7 +188,7 @@ export default function Home() {
         throw new Error(response.error || 'Failed to redo search');
       }
 
-      const transformedResults = transformBackendData(response);
+      const transformedResults = transformBackendData(response.cleaned_data);
 
       setSearchSession(prev => prev ? {
         ...prev,
