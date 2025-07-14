@@ -32,7 +32,7 @@ export default function CollectionDetailPage() {
   // Track items that are in the process of being saved/unsaved
   const [processingItems, setProcessingItems] = useState<Set<string>>(new Set());
   
-  const { showNotification, savedItem, savedItemId, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
+  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const {
     currentCollection,
@@ -165,8 +165,7 @@ export default function CollectionDetailPage() {
           shipping: item.products.delivery_info,
           tag: item.products.category
         };
-        const savedItemId = response.item?.id || response.wishlist_item?.id;
-        showSaveNotification(clothingItem, savedItemId, 'Added to favorites');
+        showSaveNotification(clothingItem, 'Added to favorites');
       }
     } catch (error) {
       // Rollback optimistic update on error - mark as unsaved again
@@ -433,7 +432,6 @@ export default function CollectionDetailPage() {
           show={showNotification}
           onClose={hideSaveNotification}
           savedItem={savedItem}
-          savedItemId={savedItemId}
           message={notificationMessage}
         />
       </div>

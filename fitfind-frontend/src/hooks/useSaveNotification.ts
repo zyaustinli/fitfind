@@ -6,13 +6,11 @@ import { ClothingItem } from "@/types";
 export function useSaveNotification() {
   const [showNotification, setShowNotification] = useState(false);
   const [savedItem, setSavedItem] = useState<ClothingItem | null>(null);
-  const [savedItemId, setSavedItemId] = useState<string | null>(null);
   const [notificationMessage, setNotificationMessage] = useState("Added to favorites");
 
-  const showSaveNotification = useCallback((item: ClothingItem, savedItemId?: string, message?: string) => {
-    console.log('useSaveNotification: showSaveNotification called with item:', item.title, 'savedItemId:', savedItemId);
+  const showSaveNotification = useCallback((item: ClothingItem, message?: string) => {
+    console.log('useSaveNotification: showSaveNotification called with item:', item.title);
     setSavedItem(item);
-    setSavedItemId(savedItemId || null);
     if (message) {
       setNotificationMessage(message);
     }
@@ -28,7 +26,6 @@ export function useSaveNotification() {
   return {
     showNotification,
     savedItem,
-    savedItemId,
     notificationMessage,
     showSaveNotification,
     hideSaveNotification,

@@ -7,21 +7,20 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddToCollectionModal } from "@/components/collections/AddToCollectionModal";
 import { ClothingItem, WishlistItemDetailed } from "@/types";
+import { useWishlist } from "@/hooks/useWishlist";
 
 interface SaveNotificationProps {
   show: boolean;
   onClose: () => void;
   savedItem: ClothingItem | null;
-  savedItemId?: string | null;
   message?: string;
 }
 
 // Convert ClothingItem to WishlistItemDetailed for the modal
-const convertToWishlistItem = (item: ClothingItem, savedItemId?: string | null): WishlistItemDetailed => {
-  const finalId = savedItemId || item.product_id || `temp-${Date.now()}`;
+const convertToWishlistItem = (item: ClothingItem): WishlistItemDetailed => {
+  const finalId = item.product_id || `temp-${Date.now()}`;
   console.log('SaveNotification: Converting ClothingItem to WishlistItemDetailed', {
     originalItemTitle: item.title,
-    savedItemId,
     productId: item.product_id,
     finalId
   });
@@ -58,11 +57,13 @@ export function SaveNotification({
   show,
   onClose,
   savedItem,
-  savedItemId,
   message = "Added to favorites",
 }: SaveNotificationProps) {
   const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [wishlistItem, setWishlistItem] = useState<WishlistItemDetailed | null>(null);
+  
+  const { wishlist } = useWishlist({ autoFetch: false });
 
   useEffect(() => {
     console.log('SaveNotification: useEffect triggered, show =', show);
@@ -79,6 +80,25 @@ export function SaveNotification({
   }, [show, onClose]);
 
   const handleManageClick = () => {
+    // Find the actual wishlist item by product_id
+    if (savedItem?.product_id) {
+      const foundWishlistItem = wishlist.find(item => 
+        item.products.id === savedItem.product_id || 
+        item.products.external_id === savedItem.product_id
+      );
+      
+      if (foundWishlistItem) {
+        console.log('SaveNotification: Found wishlist item:', foundWishlistItem.id);
+        setWishlistItem(foundWishlistItem);
+      } else {
+        console.log('SaveNotification: Wishlist item not found, using converted item');
+        setWishlistItem(convertToWishlistItem(savedItem));
+      }
+    } else {
+      console.log('SaveNotification: No product_id, using converted item');
+      setWishlistItem(savedItem ? convertToWishlistItem(savedItem) : null);
+    }
+    
     setShowCollectionModal(true);
     setIsVisible(false);
   };
@@ -130,11 +150,11 @@ export function SaveNotification({
         </Card>
       </div>
 
-      {savedItem && (
+      {wishlistItem && (
         <AddToCollectionModal
           open={showCollectionModal}
           onOpenChange={handleCollectionModalClose}
-          item={convertToWishlistItem(savedItem, savedItemId)}
+          item={wishlistItem}
           onSuccess={handleSuccess}
         />
       )}
