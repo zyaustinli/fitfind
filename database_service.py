@@ -443,45 +443,67 @@ class DatabaseService:
             logger.error(f"Error checking wishlist: {e}")
             return False
 
-    def check_bulk_wishlist_status(self, user_id: str, external_ids: List[str]) -> Dict[str, bool]:
-        """Check wishlist status for multiple external IDs efficiently"""
+    def check_bulk_wishlist_status(self, user_id: str, external_ids: List[str], products_info: List[Dict] = None) -> Dict[str, bool]:
+        """Check wishlist status for multiple external IDs using the same logic as the working endpoint"""
         try:
             if not external_ids:
                 return {}
             
-            # Get all products that match the external IDs
-            products_response = (self.service_client.table("products")
-                               .select("id, external_id")
-                               .in_("external_id", external_ids)
-                               .execute())
+            print(f"DEBUG: Checking wishlist status for user {user_id} with {len(external_ids)} external IDs")
             
-            if not products_response.data:
-                return {ext_id: False for ext_id in external_ids}
+            # Use the exact same logic as the working is_item_in_wishlist method
+            wishlist_status = {}
+            for product_id in external_ids:
+                wishlist_status[product_id] = self.is_item_in_wishlist(user_id, product_id)
             
-            # Create mapping of external_id to internal UUID
-            external_to_internal = {p['external_id']: p['id'] for p in products_response.data}
-            internal_uuids = list(external_to_internal.values())
+            # Debug: Show results
+            saved_count = sum(1 for is_saved in wishlist_status.values() if is_saved)
+            print(f"DEBUG: Found {saved_count} out of {len(external_ids)} items marked as saved")
             
-            # Check which products are in user's wishlist
-            wishlist_response = (self.service_client.table("user_saved_items")
-                               .select("product_id")
-                               .eq("user_id", user_id)
-                               .in_("product_id", internal_uuids)
-                               .execute())
-            
-            # Create set of saved internal UUIDs for fast lookup
-            saved_internal_ids = {item['product_id'] for item in wishlist_response.data}
-            
-            # Build result mapping external_id -> is_saved
-            result = {}
-            for ext_id in external_ids:
-                internal_id = external_to_internal.get(ext_id)
-                result[ext_id] = internal_id in saved_internal_ids if internal_id else False
-            
-            return result
+            return wishlist_status
         except Exception as e:
             logger.error(f"Error checking bulk wishlist status: {e}")
             return {ext_id: False for ext_id in external_ids}
+    
+    def _fallback_wishlist_matching(self, user_id: str, products_info: List[Dict]) -> Dict[str, bool]:
+        """Fallback matching for wishlist items by title and source when external_id fails"""
+        try:
+            result = {}
+            
+            # Get all user's wishlist items with product details
+            wishlist_items = (self.service_client.table("user_saved_items")
+                            .select("*, products!inner(*)")
+                            .eq("user_id", user_id)
+                            .execute())
+            
+            print(f"DEBUG: Found {len(wishlist_items.data or [])} items in user's wishlist for fallback matching")
+            
+            for product_info in products_info:
+                external_id = product_info['external_id']
+                title = product_info.get('title', '').strip().lower()
+                source = product_info.get('source', '').strip().lower()
+                
+                # Look for similar products in wishlist
+                is_saved = False
+                for wishlist_item in wishlist_items.data or []:
+                    saved_product = wishlist_item.get('products', {})
+                    saved_title = saved_product.get('title', '').strip().lower()
+                    saved_source = saved_product.get('source', '').strip().lower()
+                    
+                    # Match by title and source
+                    if (title and saved_title and title == saved_title and 
+                        source and saved_source and source == saved_source):
+                        is_saved = True
+                        print(f"DEBUG: Fallback match found for '{product_info.get('title')}' from {source}")
+                        break
+                
+                result[external_id] = is_saved
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in fallback wishlist matching: {e}")
+            return {info['external_id']: False for info in products_info}
 
     def update_wishlist_item(self, wishlist_item_id: str, user_id: str, updates: Dict) -> Optional[Dict]:
         """Update a wishlist item's notes or tags"""

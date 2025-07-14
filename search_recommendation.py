@@ -1442,8 +1442,20 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
                                 # Also add external_id field for database lookup
                                 product['external_id'] = product['id']
             
-            # Get bulk wishlist status
+            print(f"DEBUG: Collected {len(external_ids)} external IDs for wishlist check:")
+            for i, ext_id in enumerate(external_ids[:5]):  # Show first 5 IDs
+                print(f"  {i+1}. {ext_id}")
+            if len(external_ids) > 5:
+                print(f"  ... and {len(external_ids) - 5} more")
+            
+            # Get bulk wishlist status using the same logic as the working endpoint
             wishlist_status = db_service.check_bulk_wishlist_status(user_id, external_ids)
+            
+            print(f"DEBUG: Wishlist status returned for {len(wishlist_status)} items:")
+            saved_count = sum(1 for is_saved in wishlist_status.values() if is_saved)
+            print(f"  {saved_count} items marked as saved")
+            for ext_id, is_saved in list(wishlist_status.items())[:5]:
+                print(f"  {ext_id}: {'SAVED' if is_saved else 'NOT SAVED'}")
             
             # Add is_saved field to each product
             if 'clothing_items' in cleaned_data:
