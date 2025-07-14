@@ -9,11 +9,13 @@ export function useSaveNotification() {
   const [notificationMessage, setNotificationMessage] = useState("Added to favorites");
 
   const showSaveNotification = useCallback((item: ClothingItem, message?: string) => {
+    console.log('useSaveNotification: showSaveNotification called with item:', item.title);
     setSavedItem(item);
     if (message) {
       setNotificationMessage(message);
     }
     setShowNotification(true);
+    console.log('useSaveNotification: notification state set to true');
   }, []);
 
   const hideSaveNotification = useCallback(() => {

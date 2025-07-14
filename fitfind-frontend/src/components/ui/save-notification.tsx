@@ -55,9 +55,12 @@ export function SaveNotification({
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    console.log('SaveNotification: useEffect triggered, show =', show);
     if (show) {
+      console.log('SaveNotification: Making notification visible');
       setIsVisible(true);
       const timer = setTimeout(() => {
+        console.log('SaveNotification: Timer expired, hiding notification');
         setIsVisible(false);
         setTimeout(onClose, 300); // Wait for animation to complete
       }, 4000);
@@ -82,7 +85,12 @@ export function SaveNotification({
     onClose();
   };
 
-  if (!show && !showCollectionModal) return null;
+  if (!show && !showCollectionModal) {
+    console.log('SaveNotification: Component not rendering - show:', show, 'showCollectionModal:', showCollectionModal);
+    return null;
+  }
+
+  console.log('SaveNotification: Component rendering - show:', show, 'isVisible:', isVisible, 'savedItem:', savedItem?.title);
 
   return (
     <>

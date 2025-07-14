@@ -148,10 +148,17 @@ export default function Home() {
       return;
     }
     if (item.product_id) {
+      console.log('Saving item:', item.title, 'with ID:', item.product_id);
       const success = await addItem(item.product_id);
+      console.log('Save result:', success);
       if (success) {
+        console.log('Showing save notification for:', item.title);
         showSaveNotification(item);
+      } else {
+        console.log('Save failed, not showing notification');
       }
+    } else {
+      console.log('No product_id found for item:', item.title);
     }
   }, [user, addItem, showSaveNotification]);
 
@@ -161,6 +168,10 @@ export default function Home() {
       await removeItem(item.product_id);
     }
   }, [user, removeItem]);
+
+  const isItemSaved = useCallback((item: ClothingItem) => {
+    return item.product_id ? isInWishlist(item.product_id) : false;
+  }, [isInWishlist]);
 
   const handleRedoSearch = async () => {
     if (!searchSession?.conversationContext) return;
@@ -376,7 +387,7 @@ export default function Home() {
               backendData={searchSession.backendData}
               onSave={handleSaveItem}
               onRemove={handleRemoveItem}
-              isItemSaved={(item) => item.product_id ? isInWishlist(item.product_id) : false}
+              isItemSaved={isItemSaved}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center">
