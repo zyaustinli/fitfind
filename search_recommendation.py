@@ -9,7 +9,9 @@ from pathlib import Path
 import time
 import datetime
 import concurrent.futures
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 from serpapi.google_search import GoogleSearch as SerpAPISearch
 import requests
     
