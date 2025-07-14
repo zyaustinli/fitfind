@@ -412,11 +412,6 @@ class DatabaseService:
         try:
             internal_product_uuid = None
 
-            print(f"DEBUG: Checking if product_id '{product_id}' is in wishlist for user {user_id}")
-            
-            # Special debug for the product we know is saved
-            if product_id == "5142907255860610215":
-                print(f"DEBUG: *** SPECIAL CHECK for known saved product {product_id} ***")
 
             # The frontend might send an internal UUID from collection/history pages,
             # or an external_id from the main search page. We handle both.
@@ -437,10 +432,7 @@ class DatabaseService:
                     internal_product_uuid = product_response.data[0]['id']
 
             if not internal_product_uuid:
-                print(f"DEBUG: Product '{product_id}' not found in database")
                 return False # Product doesn't exist
-
-            print(f"DEBUG: Found product with internal UUID: {internal_product_uuid}")
 
             response = (self.service_client.table("user_saved_items")
                        .select("id")
@@ -448,9 +440,7 @@ class DatabaseService:
                        .eq("product_id", internal_product_uuid)
                        .execute())
             
-            is_saved = bool(response.data)
-            print(f"DEBUG: Product {product_id} is {'SAVED' if is_saved else 'NOT SAVED'}")
-            return is_saved
+            return bool(response.data)
         except Exception as e:
             logger.error(f"Error checking wishlist: {e}")
             return False
@@ -461,16 +451,10 @@ class DatabaseService:
             if not external_ids:
                 return {}
             
-            print(f"DEBUG: Checking wishlist status for user {user_id} with {len(external_ids)} external IDs")
-            
             # Use the exact same logic as the working is_item_in_wishlist method
             wishlist_status = {}
             for product_id in external_ids:
                 wishlist_status[product_id] = self.is_item_in_wishlist(user_id, product_id)
-            
-            # Debug: Show results
-            saved_count = sum(1 for is_saved in wishlist_status.values() if is_saved)
-            print(f"DEBUG: Found {saved_count} out of {len(external_ids)} items marked as saved")
             
             return wishlist_status
         except Exception as e:

@@ -32,7 +32,7 @@ export default function Home() {
   });
 
   const { user } = useAuth();
-  const { addItem, removeItem, isInWishlist, checkStatus, isInitialLoadComplete } = useWishlist({});
+  const { addItem, removeItem, isInWishlist, checkStatus, initialLoadStatus } = useWishlist({});
   const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
@@ -176,8 +176,8 @@ export default function Home() {
   }, [user, removeItem]);
 
   const isItemSaved = useCallback((item: ClothingItem) => {
-    // Use is_saved field from backend response if available, otherwise fall back to wishlist check
-    return item.is_saved ?? (item.product_id ? isInWishlist(item.product_id) : false);
+    // This function is now guaranteed to have the correct data
+    return item.product_id ? isInWishlist(item.product_id) : false;
   }, [isInWishlist]);
 
   // Note: Wishlist status is now included in the initial API response
@@ -392,7 +392,7 @@ export default function Home() {
         {/* Results Section */}
         <div className="flex-1 p-8 bg-muted/30">
           {searchSession?.status === 'completed' && searchSession.results && searchSession.results.length > 0 ? (
-            isInitialLoadComplete ? (
+            initialLoadStatus === 'success' ? (
               <RecommendationsDisplay
                 results={searchSession.results}
                 backendData={searchSession.backendData}
@@ -401,7 +401,7 @@ export default function Home() {
                 isItemSaved={isItemSaved}
               />
             ) : (
-              <ProductGridSkeleton />
+              <ProductGridSkeleton count={searchSession.results.length} />
             )
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center">

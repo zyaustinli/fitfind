@@ -34,6 +34,7 @@ export interface UseWishlistReturn {
   loading: LoadingState;
   error: ErrorState;
   isInitialLoadComplete: boolean;
+  initialLoadStatus: 'idle' | 'loading' | 'success' | 'error';
   
   // Actions
   fetchWishlist: (options?: { reset?: boolean }) => Promise<void>;
@@ -74,6 +75,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   const [filters, setFiltersState] = useState<WishlistFilters>(defaultFilters);
   const [wishlistStatus, setWishlistStatus] = useState<Record<string, boolean>>({});
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [initialLoadStatus, setInitialLoadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   
   // UI state
   const [loading, setLoading] = useState<LoadingState>({
@@ -110,6 +112,11 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     const { reset = false } = options;
     const currentOffset = reset ? 0 : pagination.offset;
     
+    // Set initial load status to loading for fresh loads
+    if (reset) {
+      setInitialLoadStatus('loading');
+    }
+    
     fetchingRef.current = true;
     setLoading({
       isLoading: true,
@@ -143,6 +150,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         // Mark initial load as complete on first fetch
         if (reset) {
           setIsInitialLoadComplete(true);
+          setInitialLoadStatus('success');
         }
       } else {
         throw new Error(response.error || 'Failed to fetch wishlist');
@@ -156,6 +164,11 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         message,
         code: undefined
       });
+      
+      // Set initial load status to error for fresh loads
+      if (reset) {
+        setInitialLoadStatus('error');
+      }
     } finally {
       if (mountedRef.current) {
         setLoading({ isLoading: false });
@@ -488,6 +501,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     loading,
     error,
     isInitialLoadComplete,
+    initialLoadStatus,
     
     // Actions
     fetchWishlist,
