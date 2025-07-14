@@ -12,13 +12,22 @@ interface SaveNotificationProps {
   show: boolean;
   onClose: () => void;
   savedItem: ClothingItem | null;
+  savedItemId?: string | null;
   message?: string;
 }
 
 // Convert ClothingItem to WishlistItemDetailed for the modal
-const convertToWishlistItem = (item: ClothingItem): WishlistItemDetailed => {
+const convertToWishlistItem = (item: ClothingItem, savedItemId?: string | null): WishlistItemDetailed => {
+  const finalId = savedItemId || item.product_id || `temp-${Date.now()}`;
+  console.log('SaveNotification: Converting ClothingItem to WishlistItemDetailed', {
+    originalItemTitle: item.title,
+    savedItemId,
+    productId: item.product_id,
+    finalId
+  });
+  
   return {
-    id: item.product_id || `temp-${Date.now()}`,
+    id: finalId,
     user_id: "current-user", // This will be populated by the backend
     product_id: item.product_id || "",
     notes: null,
@@ -49,6 +58,7 @@ export function SaveNotification({
   show,
   onClose,
   savedItem,
+  savedItemId,
   message = "Added to favorites",
 }: SaveNotificationProps) {
   const [showCollectionModal, setShowCollectionModal] = useState(false);
@@ -124,7 +134,7 @@ export function SaveNotification({
         <AddToCollectionModal
           open={showCollectionModal}
           onOpenChange={handleCollectionModalClose}
-          item={convertToWishlistItem(savedItem)}
+          item={convertToWishlistItem(savedItem, savedItemId)}
           onSuccess={handleSuccess}
         />
       )}

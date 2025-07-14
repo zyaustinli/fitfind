@@ -314,7 +314,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     if (!user) return false;
 
     try {
-      const response = await addItemToCollection(collectionId, savedItemId);
+      console.log('useCollections.addToCollection: Adding item to collection', { collectionId, savedItemId });
+      const response = await addItemToCollection(collectionId, { saved_item_id: savedItemId });
+      console.log('useCollections.addToCollection: API response:', response);
       
       if (response.success) {
         // Update collection item count
@@ -326,11 +328,14 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
           )
         );
         
+        console.log('useCollections.addToCollection: Successfully added item to collection');
         return true;
       } else {
+        console.error('useCollections.addToCollection: API returned error:', response.error);
         throw new Error(response.error || 'Failed to add item');
       }
     } catch (err) {
+      console.error('useCollections.addToCollection: Exception caught:', err);
       const message = err instanceof Error ? err.message : 'Failed to add item';
       setError({
         hasError: true,

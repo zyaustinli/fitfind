@@ -38,7 +38,7 @@ export interface UseWishlistReturn {
   fetchWishlist: (options?: { reset?: boolean }) => Promise<void>;
   loadMore: () => Promise<void>;
   refresh: () => Promise<void>;
-  addItem: (productId: string, notes?: string, tags?: string[]) => Promise<boolean>;
+  addItem: (productId: string, notes?: string, tags?: string[]) => Promise<string | null>;
   removeItem: (productId: string) => Promise<boolean>;
   updateItem: (wishlistItemId: string, updates: { notes?: string; tags?: string[] }) => Promise<boolean>;
   checkStatus: (productIds: string[]) => Promise<void>;
@@ -180,10 +180,10 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     productId: string, 
     notes?: string, 
     tags?: string[]
-  ): Promise<boolean> => {
+  ): Promise<string | null> => {
     if (!user) {
       console.log('useWishlist.addItem: No user found');
-      return false;
+      return null;
     }
 
     console.log('useWishlist.addItem: Starting save for productId:', productId);
@@ -210,8 +210,8 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
           total_count: (prev.total_count || 0) + 1
         }));
         
-        console.log('useWishlist.addItem: Successfully saved item, returning true');
-        return true;
+        console.log('useWishlist.addItem: Successfully saved item, returning saved_item_id:', wishlistItem.id);
+        return wishlistItem.id;
       } else {
         console.log('useWishlist.addItem: API response indicates failure:', response.error);
         throw new Error(response.error || 'Failed to add item to wishlist');
@@ -227,8 +227,8 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         message,
         code: undefined
       });
-      console.log('useWishlist.addItem: Returning false due to error');
-      return false;
+      console.log('useWishlist.addItem: Returning null due to error');
+      return null;
     }
   }, [user]);
 

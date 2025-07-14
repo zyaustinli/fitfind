@@ -69,7 +69,7 @@ export default function SearchSessionDetailPage() {
   });
 
   const { addItem, removeItem, isInWishlist } = useWishlist({}); // Use the wishlist hook
-  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
+  const { showNotification, savedItem, savedItemId, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
   
   const [sessionItem, setSessionItem] = useState<SearchHistoryItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -336,9 +336,9 @@ export default function SearchSessionDetailPage() {
       return;
     }
     if (product.product_id) {
-      const success = await addItem(product.product_id);
-      if (success) {
-        showSaveNotification(product);
+      const savedItemId = await addItem(product.product_id);
+      if (savedItemId) {
+        showSaveNotification(product, savedItemId);
       }
     }
   };
@@ -636,6 +636,7 @@ export default function SearchSessionDetailPage() {
         show={showNotification}
         onClose={hideSaveNotification}
         savedItem={savedItem}
+        savedItemId={savedItemId}
         message={notificationMessage}
       />
     </div>

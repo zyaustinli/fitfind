@@ -103,27 +103,46 @@ export function AddToCollectionModal({
       setLoading(true);
       setError("");
 
+      console.log('AddToCollectionModal: Adding item to collections', { 
+        itemId: item.id, 
+        selectedCollections: Array.from(selectedCollections),
+        itemTitle: item.products?.title || 'Unknown'
+      });
+
       // Add item to each selected collection
-      const promises = Array.from(selectedCollections).map(collectionId =>
-        addToCollection(collectionId, item.id)
-      );
+      const promises = Array.from(selectedCollections).map(collectionId => {
+        console.log('AddToCollectionModal: Adding to collection:', collectionId);
+        return addToCollection(collectionId, item.id);
+      });
 
       const results = await Promise.all(promises);
       const successCount = results.filter(Boolean).length;
 
+      console.log('AddToCollectionModal: Results summary', { 
+        totalCollections: selectedCollections.size,
+        successCount,
+        results 
+      });
+
       if (successCount === selectedCollections.size) {
         // All additions successful
+        console.log('AddToCollectionModal: All additions successful');
         onSuccess?.();
         onOpenChange(false);
       } else if (successCount > 0) {
         // Some successful, some failed
-        setError(`Added to ${successCount} of ${selectedCollections.size} collections`);
+        const errorMsg = `Added to ${successCount} of ${selectedCollections.size} collections`;
+        console.warn('AddToCollectionModal: Partial success:', errorMsg);
+        setError(errorMsg);
       } else {
         // All failed
+        console.error('AddToCollectionModal: All additions failed');
         setError("Failed to add item to collections");
       }
     } catch (err) {
-      setError("An error occurred while adding to collections");
+      console.error('AddToCollectionModal: Exception caught:', err);
+      const errorMessage = err instanceof Error ? err.message : "An error occurred while adding to collections";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
