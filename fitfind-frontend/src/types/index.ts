@@ -15,6 +15,7 @@ export interface BackendProduct {
   review_count: number | null;
   delivery_info: string | null;
   tags: string[];
+  is_saved?: boolean;
 }
 
 export interface BackendClothingItem {
@@ -235,6 +236,28 @@ export interface ClothingItem {
   shipping?: string | null;
   tag?: string | null;
   error?: string;
+  is_saved?: boolean;
+}
+
+// Product type for the transformed backend data
+export interface Product {
+  id: string;
+  product_id: string;
+  title: string;
+  price: string | null;
+  price_numeric: number | null;
+  old_price: string | null;
+  old_price_numeric: number | null;
+  discount_percentage: string | null;
+  image_url: string | null;
+  product_url: string | null;
+  source: string;
+  source_icon: string | null;
+  rating: number | null;
+  review_count: number | null;
+  delivery_info: string | null;
+  tags: string[];
+  is_saved?: boolean;
 }
 
 // Direct Links UI Component Types

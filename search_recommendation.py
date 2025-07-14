@@ -9,9 +9,7 @@ from pathlib import Path
 import time
 import datetime
 import concurrent.futures
-from google import genai
-from google.genai import types
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+import google.generativeai as genai
 from serpapi.google_search import GoogleSearch as SerpAPISearch
 import requests
     
@@ -1377,7 +1375,7 @@ def save_cleaned_results_to_json(cleaned_data, output_path=None):
 
 
 # Enhanced version of outfit_recommendation that includes cleaned data
-def outfit_recommendation_with_cleaned_data(image_path, country="us", language="en", output_path=None, enable_redo=False, save_raw_json=True, save_cleaned_json=True, progress_callback=None):
+def outfit_recommendation_with_cleaned_data(image_path, country="us", language="en", output_path=None, enable_redo=False, save_raw_json=True, save_cleaned_json=True, progress_callback=None, user_id=None):
     """
     Enhanced version that returns both raw and cleaned data for frontend use
     
@@ -1390,6 +1388,7 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     - save_raw_json: If True, saves complete raw SerpAPI responses as JSON
     - save_cleaned_json: If True, saves cleaned data optimized for frontend
     - progress_callback: Optional callback function for progress updates
+    - user_id: Optional user ID to check wishlist status for products
     
     Returns:
     - Dictionary containing results, cleaned data, and optionally conversation context
@@ -1422,6 +1421,36 @@ def outfit_recommendation_with_cleaned_data(image_path, country="us", language="
     # Clean the raw search results for frontend
     raw_results = result.get("raw_results_data", [])
     cleaned_data = clean_search_results_for_frontend(raw_results)
+    
+    # Check wishlist status for products if user_id is provided
+    if user_id:
+        update_progress("Checking wishlist status...")
+        try:
+            from database_service import DatabaseService
+            db_service = DatabaseService()
+            
+            # Collect all external IDs from the cleaned data
+            external_ids = []
+            for item_type, products in cleaned_data.items():
+                for product in products:
+                    if product.get('external_id'):
+                        external_ids.append(product['external_id'])
+            
+            # Get bulk wishlist status
+            wishlist_status = db_service.check_bulk_wishlist_status(user_id, external_ids)
+            
+            # Add is_saved field to each product
+            for item_type, products in cleaned_data.items():
+                for product in products:
+                    external_id = product.get('external_id')
+                    product['is_saved'] = wishlist_status.get(external_id, False)
+            
+        except Exception as e:
+            print(f"Warning: Failed to check wishlist status: {e}")
+            # If wishlist check fails, continue without saved status
+            for item_type, products in cleaned_data.items():
+                for product in products:
+                    product['is_saved'] = False
     
     update_progress("Finalizing results...")
     

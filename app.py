@@ -863,7 +863,8 @@ def upload_file():
                 enable_redo=True,
                 save_raw_json=True,
                 save_cleaned_json=True,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                user_id=user_id
             )
             
             # <<<--- ADD THIS DEBUGGING BLOCK --- START --->>>

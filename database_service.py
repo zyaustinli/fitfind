@@ -443,6 +443,46 @@ class DatabaseService:
             logger.error(f"Error checking wishlist: {e}")
             return False
 
+    def check_bulk_wishlist_status(self, user_id: str, external_ids: List[str]) -> Dict[str, bool]:
+        """Check wishlist status for multiple external IDs efficiently"""
+        try:
+            if not external_ids:
+                return {}
+            
+            # Get all products that match the external IDs
+            products_response = (self.service_client.table("products")
+                               .select("id, external_id")
+                               .in_("external_id", external_ids)
+                               .execute())
+            
+            if not products_response.data:
+                return {ext_id: False for ext_id in external_ids}
+            
+            # Create mapping of external_id to internal UUID
+            external_to_internal = {p['external_id']: p['id'] for p in products_response.data}
+            internal_uuids = list(external_to_internal.values())
+            
+            # Check which products are in user's wishlist
+            wishlist_response = (self.service_client.table("user_saved_items")
+                               .select("product_id")
+                               .eq("user_id", user_id)
+                               .in_("product_id", internal_uuids)
+                               .execute())
+            
+            # Create set of saved internal UUIDs for fast lookup
+            saved_internal_ids = {item['product_id'] for item in wishlist_response.data}
+            
+            # Build result mapping external_id -> is_saved
+            result = {}
+            for ext_id in external_ids:
+                internal_id = external_to_internal.get(ext_id)
+                result[ext_id] = internal_id in saved_internal_ids if internal_id else False
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error checking bulk wishlist status: {e}")
+            return {ext_id: False for ext_id in external_ids}
+
     def update_wishlist_item(self, wishlist_item_id: str, user_id: str, updates: Dict) -> Optional[Dict]:
         """Update a wishlist item's notes or tags"""
         try:

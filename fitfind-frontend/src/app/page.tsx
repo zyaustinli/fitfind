@@ -152,6 +152,8 @@ export default function Home() {
       const success = await addItem(item.product_id);
       console.log('Save result:', success);
       if (success) {
+        // Update local state to show saved status immediately
+        item.is_saved = true;
         console.log('Showing save notification for:', item.title);
         showSaveNotification(item);
       } else {
@@ -165,26 +167,21 @@ export default function Home() {
   const handleRemoveItem = useCallback(async (item: ClothingItem) => {
     if (!user) return;
     if (item.product_id) {
-      await removeItem(item.product_id);
+      const success = await removeItem(item.product_id);
+      if (success) {
+        // Update local state to show unsaved status immediately
+        item.is_saved = false;
+      }
     }
   }, [user, removeItem]);
 
   const isItemSaved = useCallback((item: ClothingItem) => {
-    return item.product_id ? isInWishlist(item.product_id) : false;
+    // Use is_saved field from backend response if available, otherwise fall back to wishlist check
+    return item.is_saved ?? (item.product_id ? isInWishlist(item.product_id) : false);
   }, [isInWishlist]);
 
-  // Check wishlist status for all products when search results are loaded
-  useEffect(() => {
-    if (!user || !searchSession?.results || searchSession.results.length === 0) return;
-
-    const productIds = searchSession.results
-      .filter(product => product.product_id)
-      .map(product => product.product_id!);
-
-    if (productIds.length > 0) {
-      checkStatus(productIds);
-    }
-  }, [searchSession?.results, user, checkStatus]);
+  // Note: Wishlist status is now included in the initial API response
+  // No need for separate checking anymore
 
   const handleRedoSearch = async () => {
     if (!searchSession?.conversationContext) return;
