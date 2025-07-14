@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
 
 def encode_image(image_path):
@@ -120,8 +120,7 @@ EXAMPLE OUTPUTS:
         }
         
         # Generate response using the system_instruction in config
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
+        response = genai_client.models.generate_content(
             model='gemini-2.5-flash-preview-05-20',
             contents=[initial_content],
             config=GenerateContentConfig(
@@ -247,8 +246,7 @@ Please provide new search queries in the same JSON array format. Make sure to in
                 api_conversation.append(msg)
         
         # Generate new response
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(
+        response = genai_client.models.generate_content(
             model=conversation_context["model"],
             contents=api_conversation,
             config=GenerateContentConfig(
