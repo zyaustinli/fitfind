@@ -96,8 +96,8 @@ CREATE TABLE public.user_saved_items (
   created_at timestamp with time zone DEFAULT now(),
   collection_id uuid,
   CONSTRAINT user_saved_items_pkey PRIMARY KEY (id),
-  CONSTRAINT user_saved_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT user_saved_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT user_saved_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT user_saved_items_collection_id_fkey FOREIGN KEY (collection_id) REFERENCES public.user_collections(id)
 );
 CREATE TABLE public.user_search_history (
