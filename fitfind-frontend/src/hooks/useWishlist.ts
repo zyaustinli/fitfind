@@ -46,6 +46,7 @@ export interface UseWishlistReturn {
   checkStatus: (productIds: string[]) => Promise<void>;
   setFilters: (filters: Partial<WishlistFilters>) => void;
   resetFilters: () => void;
+  setInitialStatus: (status: Record<string, boolean>) => void;
   
   // Computed
   filteredWishlist: WishlistItemDetailed[];
@@ -375,6 +376,10 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     return wishlistStatus[productId] === true;
   }, [wishlistStatus]);
 
+  const setInitialStatus = useCallback((status: Record<string, boolean>) => {
+    setWishlistStatus(prev => ({ ...prev, ...status }));
+  }, []);
+
   // Computed values
   const filteredWishlist = useMemo(() => {
     let filtered = [...wishlist];
@@ -513,6 +518,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     checkStatus,
     setFilters,
     resetFilters,
+    setInitialStatus,
     
     // Computed
     filteredWishlist,

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Sparkles, Search, AlertCircle, ShoppingBag, RefreshCw, RotateCcw, Upload, ImageIcon, Clock } from "lucide-react";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { RecommendationsDisplay } from "@/components/ui/recommendations-display";
+import { ProductGridSkeleton } from "@/components/ui/skeleton";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,7 +33,7 @@ export default function Home() {
   });
 
   const { user } = useAuth();
-  const { addItem, removeItem, isInWishlist, checkStatus, initialLoadStatus } = useWishlist({});
+  const { addItem, removeItem, isInWishlist, checkStatus, initialLoadStatus, setInitialStatus } = useWishlist({});
   const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
@@ -111,6 +112,22 @@ export default function Home() {
       }
 
       const transformedResults = transformBackendData(response.cleaned_data);
+
+      // *** NEW CODE: Extract and update wishlist status from backend response ***
+      // Create a flat list of all products from the response
+      const allProducts = response.cleaned_data.clothing_items.flatMap(item => item.products);
+
+      // Extract the initial wishlist status from the backend response
+      const initialStatus: Record<string, boolean> = {};
+      allProducts.forEach(product => {
+        if (product.id) { // product.id is the unique identifier
+          initialStatus[product.id] = product.is_saved ?? false;
+        }
+      });
+
+      // Update the wishlist hook's status
+      setInitialStatus(initialStatus);
+      // *** END NEW CODE ***
 
       setSearchSession({
         ...initialSession,
@@ -210,6 +227,22 @@ export default function Home() {
       }
 
       const transformedResults = transformBackendData(response.cleaned_data);
+
+      // *** NEW CODE: Extract and update wishlist status from redo response ***
+      // Create a flat list of all products from the response
+      const allProducts = response.cleaned_data.clothing_items.flatMap(item => item.products);
+
+      // Extract the initial wishlist status from the backend response
+      const initialStatus: Record<string, boolean> = {};
+      allProducts.forEach(product => {
+        if (product.id) { // product.id is the unique identifier
+          initialStatus[product.id] = product.is_saved ?? false;
+        }
+      });
+
+      // Update the wishlist hook's status
+      setInitialStatus(initialStatus);
+      // *** END NEW CODE ***
 
       setSearchSession(prev => prev ? {
         ...prev,
