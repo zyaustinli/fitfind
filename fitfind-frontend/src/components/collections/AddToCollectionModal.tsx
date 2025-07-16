@@ -26,8 +26,10 @@ export function AddToCollectionModal({
   const [selectedCollections, setSelectedCollections] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isSuccessMessage, setIsSuccessMessage] = useState(false);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
+  const [existingCollections, setExistingCollections] = useState<Set<string>>(new Set());
 
   const {
     collections,
@@ -50,8 +52,10 @@ export function AddToCollectionModal({
       setSelectedCollections(new Set());
       setSearchQuery("");
       setError("");
+      setIsSuccessMessage(false);
       setShowCreateNew(false);
       setNewCollectionName("");
+      setExistingCollections(new Set());
       fetchCollections();
     }
   }, [open, fetchCollections]);
@@ -59,6 +63,11 @@ export function AddToCollectionModal({
   if (!open || !item) return null;
 
   const handleCollectionToggle = (collectionId: string) => {
+    // Clear any existing error when user interacts with collections
+    if (error) {
+      setError("");
+    }
+    
     const newSelected = new Set(selectedCollections);
     if (newSelected.has(collectionId)) {
       newSelected.delete(collectionId);
@@ -110,13 +119,20 @@ export function AddToCollectionModal({
       });
 
       // Add item to each selected collection
-      const promises = Array.from(selectedCollections).map(collectionId => {
+      const promises = Array.from(selectedCollections).map(async (collectionId) => {
         console.log('AddToCollectionModal: Adding to collection:', collectionId);
-        return addToCollection(collectionId, item.id);
+        try {
+          const result = await addToCollection(collectionId, item.id);
+          return { collectionId, success: result, error: null };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          return { collectionId, success: false, error: errorMessage };
+        }
       });
 
       const results = await Promise.all(promises);
-      const successCount = results.filter(Boolean).length;
+      const successCount = results.filter(result => result.success).length;
+      const failedResults = results.filter(result => !result.success);
 
       console.log('AddToCollectionModal: Results summary', { 
         totalCollections: selectedCollections.size,
@@ -131,13 +147,47 @@ export function AddToCollectionModal({
         onOpenChange(false);
       } else if (successCount > 0) {
         // Some successful, some failed
-        const errorMsg = `Added to ${successCount} of ${selectedCollections.size} collections`;
-        console.warn('AddToCollectionModal: Partial success:', errorMsg);
-        setError(errorMsg);
+        const duplicateCount = failedResults.filter(result => 
+          result.error && result.error.toLowerCase().includes('already') || 
+          result.error && result.error.toLowerCase().includes('duplicate')
+        ).length;
+        
+        let message: string;
+        if (duplicateCount > 0) {
+          message = duplicateCount === failedResults.length 
+            ? `Item already exists in ${duplicateCount} collection${duplicateCount !== 1 ? 's' : ''}`
+            : `Added to ${successCount} collection${successCount !== 1 ? 's' : ''}. ${duplicateCount} already contained this item.`;
+        } else {
+          message = `Added to ${successCount} of ${selectedCollections.size} collections`;
+        }
+        
+        // For partial successes, show as info rather than error if there were duplicates
+        if (duplicateCount > 0 && successCount > 0) {
+          // Show success message and close modal after a delay
+          setIsSuccessMessage(true);
+          setError(message);
+          setTimeout(() => {
+            onSuccess?.();
+            onOpenChange(false);
+          }, 2000);
+        } else {
+          setIsSuccessMessage(false);
+          setError(message);
+        }
+        console.warn('AddToCollectionModal: Partial success:', message);
       } else {
         // All failed
+        const duplicateCount = failedResults.filter(result => 
+          result.error && result.error.toLowerCase().includes('already') || 
+          result.error && result.error.toLowerCase().includes('duplicate')
+        ).length;
+        
+        if (duplicateCount === failedResults.length) {
+          setError("This item is already in the selected collections");
+        } else {
+          setError("Failed to add item to collections");
+        }
         console.error('AddToCollectionModal: All additions failed');
-        setError("Failed to add item to collections");
       }
     } catch (err) {
       console.error('AddToCollectionModal: Exception caught:', err);
@@ -319,10 +369,20 @@ export function AddToCollectionModal({
 
         {/* Footer */}
         <div className="p-4 border-t border-border">
-          {/* Error Message */}
+          {/* Error/Success Message */}
           {error && (
-            <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-              <p className="text-sm text-destructive">{error}</p>
+            <div className={`mb-4 p-3 rounded-lg ${
+              isSuccessMessage 
+                ? 'bg-green-50 border border-green-200' 
+                : 'bg-destructive/10 border border-destructive/20'
+            }`}>
+              <p className={`text-sm ${
+                isSuccessMessage 
+                  ? 'text-green-700' 
+                  : 'text-destructive'
+              }`}>
+                {error}
+              </p>
             </div>
           )}
 
