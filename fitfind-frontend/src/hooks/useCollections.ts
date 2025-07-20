@@ -93,27 +93,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     };
   }, []);
 
-  // Auto-fetch collections when user is authenticated
-  useEffect(() => {
-    console.log('📁 Collections hook: checking initialization', {
-      authLoading,
-      hasUser: !!user,
-      userEmail: user?.email,
-      autoFetch,
-      hasInitialized: hasInitializedRef.current
-    });
-    
-    if (!authLoading && user && autoFetch && !hasInitializedRef.current) {
-      console.log('📁 Collections hook: initializing for user:', user.email);
-      hasInitializedRef.current = true;
-      fetchCollections();
-    } else if (!user) {
-      // Clear data when no user
-      console.log('📁 Collections hook: clearing data - no user');
-      setCollections([]);
-      hasInitializedRef.current = false;
-    }
-  }, [authLoading, user?.id, autoFetch, fetchCollections]);
+  // Auto-fetch collections when user is authenticated - moved to after fetchCollections is defined
 
   const clearError = useCallback(() => {
     setError({ hasError: false });
@@ -153,6 +133,28 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       }
     }
   }, [user, clearError]);
+
+  // Auto-fetch collections when user is authenticated
+  useEffect(() => {
+    console.log('📁 Collections hook: checking initialization', {
+      authLoading,
+      hasUser: !!user,
+      userEmail: user?.email,
+      autoFetch,
+      hasInitialized: hasInitializedRef.current
+    });
+    
+    if (!authLoading && user && autoFetch && !hasInitializedRef.current) {
+      console.log('📁 Collections hook: initializing for user:', user.email);
+      hasInitializedRef.current = true;
+      fetchCollections();
+    } else if (!user) {
+      // Clear data when no user
+      console.log('📁 Collections hook: clearing data - no user');
+      setCollections([]);
+      hasInitializedRef.current = false;
+    }
+  }, [authLoading, user?.id, autoFetch, fetchCollections]);
 
   const createNewCollection = useCallback(async (
     name: string,
