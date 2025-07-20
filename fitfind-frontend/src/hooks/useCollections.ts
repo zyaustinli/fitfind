@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Collection,
   CollectionsResponse,
@@ -75,33 +74,23 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     message: undefined,
     code: undefined
   });
-
-  const mountedRef = useRef(true);
-  const hasInitializedRef = useRef(false);
-  const pathname = usePathname();
   
-  // FIX #1: Add a ref to track pagination state without causing re-renders
-  const paginationRef = useRef(collectionPagination);
-  useEffect(() => {
-    paginationRef.current = collectionPagination;
-  }, [collectionPagination]);
+  // Track if we've fetched data for the current user
+  const [hasFetchedForUser, setHasFetchedForUser] = useState<string | null>(null);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  // Auto-fetch collections when user is authenticated - moved to after fetchCollections is defined
-
+  // Clear error helper
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
+  // Fetch collections - stable function that doesn't cause re-renders
   const fetchCollections = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('📁 Collections: No user, skipping fetch');
+      return;
+    }
 
+    console.log('📁 Collections: Fetching collections for user:', user.email);
     setLoading({
       isLoading: true,
       message: 'Loading collections...'
@@ -110,74 +99,64 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
     try {
       const response: CollectionsResponse = await getCollections();
-
-      if (!mountedRef.current) return;
-
+      
       if (response.success) {
+        console.log('📁 Collections: Fetched', response.collections.length, 'collections');
         setCollections(response.collections);
+        setHasFetchedForUser(user.id);
       } else {
         throw new Error(response.error || 'Failed to fetch collections');
       }
     } catch (err) {
-      if (!mountedRef.current) return;
-      
       const message = err instanceof Error ? err.message : 'Failed to load collections';
+      console.error('📁 Collections: Fetch error:', message);
       setError({
         hasError: true,
         message,
         code: undefined
       });
     } finally {
-      if (mountedRef.current) {
-        setLoading({ isLoading: false });
-      }
+      setLoading({ isLoading: false });
     }
-  }, [user?.id]); // 🔧 FIX: Stabilize dependencies - only depend on user ID
+  }, [user, clearError]);
 
-  // 🔧 CONSOLIDATED initialization effect - FIXED dependencies to prevent instability
+  // Single effect for data fetching - simplified and stable
   useEffect(() => {
-    console.log('📁 Collections: Initialization check', {
+    console.log('📁 Collections: Main effect check', {
       authLoading,
       hasUser: !!user,
-      userEmail: user?.email,
-      hasInitialized: hasInitializedRef.current,
+      userId: user?.id,
+      hasFetchedForUser,
       autoFetch
     });
-    
+
     // Skip if auth is still loading
     if (authLoading) {
-      console.log('📁 Collections: Auth still loading, skipping');
+      console.log('📁 Collections: Auth loading, waiting...');
       return;
     }
 
-    // Skip if autoFetch is disabled
-    if (!autoFetch) {
-      console.log('📁 Collections: AutoFetch disabled, skipping');
-      return;
-    }
-
-    // Clear data when no user
+    // Clear data when user logs out
     if (!user) {
       console.log('📁 Collections: No user, clearing data');
       setCollections([]);
       setCurrentCollection(null);
       setCollectionItems([]);
       setCollectionPagination(null);
-      hasInitializedRef.current = false;
+      setHasFetchedForUser(null);
       return;
     }
 
-    // Only fetch if we haven't initialized for this user
-    if (!hasInitializedRef.current) {
-      console.log('📁 Collections: Initializing for user:', user.email);
-      hasInitializedRef.current = true;
-      // Set loading state before fetch to prevent empty state flash
+    // Fetch if we haven't fetched for this user yet and autoFetch is enabled
+    if (autoFetch && user.id !== hasFetchedForUser) {
+      console.log('📁 Collections: Need to fetch for new user');
+      // Set loading immediately to prevent empty state flash
       setLoading({ isLoading: true, message: 'Loading collections...' });
-      // Call function directly to avoid dependency issues
-      fetchCollections().catch(console.error);
+      fetchCollections();
     }
-  }, [user?.id, authLoading, autoFetch]); // 🔧 FIXED: Removed fetchCollections to prevent instability
+  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, fetchCollections]);
 
+  // Collection CRUD operations
   const createNewCollection = useCallback(async (
     name: string,
     description?: string,
@@ -185,23 +164,23 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   ): Promise<Collection | null> => {
     if (!user) return null;
 
-    // Clear any existing errors when starting a new collection creation
     clearError();
 
     try {
-      const response: CollectionResponse = await createCollection({ name, description, is_private: isPrivate });
+      const response: CollectionResponse = await createCollection({ 
+        name, 
+        description, 
+        is_private: isPrivate 
+      });
       
       if (response.success && response.collection) {
         setCollections(prev => [...prev, response.collection!]);
         return response.collection;
       } else {
-        // Throw the error so it can be caught by the calling function
-        // but don't set the hook's error state
         throw new Error(response.error || 'Failed to create collection');
       }
     } catch (err) {
-      // Re-throw the error so the calling function can handle it
-      throw err;
+      throw err; // Re-throw for the calling component to handle
     }
   }, [user, clearError]);
 
@@ -212,7 +191,6 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     if (!user) return false;
 
     try {
-      // Filter to only allowed update fields and handle null values
       const allowedUpdates = {
         ...(updates.name !== undefined && { name: updates.name }),
         ...(updates.description !== undefined && { description: updates.description || undefined }),
@@ -290,8 +268,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   ) => {
     if (!user) return;
 
-    // FIX #2: Use the ref to get the current offset, preventing a dependency cycle
-    const currentOffset = reset ? 0 : (paginationRef.current?.offset || 0);
+    const currentOffset = reset ? 0 : (collectionPagination?.offset || 0);
     const limitToFetch = 50;
     
     setLoading({
@@ -306,10 +283,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         currentOffset
       );
 
-      if (!mountedRef.current) return;
-
       if (response.success) {
-        // FIX #3: Set the current collection from the API response
         if (response.collection) {
           setCurrentCollection(response.collection);
         }
@@ -318,25 +292,15 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
           reset ? response.items : [...prev, ...response.items]
         );
         setCollectionPagination(response.pagination);
-        
-        // Set loading to false AFTER setting the collection data to prevent race condition
-        setLoading({ isLoading: false });
       } else {
-        setLoading({ isLoading: false });
         throw new Error(response.error || 'Failed to fetch items');
       }
     } catch (err) {
-      if (!mountedRef.current) return;
-      
-      // Set loading to false for error cases
-      setLoading({ isLoading: false });
-      
-      // Check if this is an ApiError with 404 status (collection not found)
+      // Check if this is a 404 error (collection not found)
       if (err && typeof err === 'object' && 'status' in err && err.status === 404) {
-        // For 404 errors, we don't set an error state - we let the UI show "Collection Not Found"
-        // The currentCollection will remain null, which will trigger the not found UI
+        // Don't set error state for 404s - let UI handle it
+        console.log('📁 Collections: Collection not found');
       } else {
-        // For other errors, set the error state
         const message = err instanceof Error ? err.message : 'Failed to load items';
         setError({
           hasError: true,
@@ -344,8 +308,10 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
           code: undefined
         });
       }
+    } finally {
+      setLoading({ isLoading: false });
     }
-  }, [user]);
+  }, [user, collectionPagination?.offset]);
 
   const addToCollection = useCallback(async (
     collectionId: string,
@@ -458,23 +424,6 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user, removeFromCollection, addToCollection]);
 
-  // 🔧 SIMPLIFIED user change reset - following useWishlist pattern (ONLY reset flag, don't clear data)
-  useEffect(() => {
-    console.log('🔄 Collections: User changed, resetting initialization flag only');
-    hasInitializedRef.current = false;
-    // 🚨 CRITICAL: Don't clear data here - let main effect handle it
-  }, [user?.id]);
-
-  // 🔧 SIMPLIFIED navigation cleanup - keep data in memory like useWishlist
-  useEffect(() => {
-    if (!pathname.startsWith('/collections')) {
-      console.log('🧹 Collections: Navigated away, light cleanup (keeping data in memory)');
-      // Only clear loading state, keep data for fast return visits
-      setLoading({ isLoading: false });
-      // 🚨 Don't reset hasInitializedRef - keep data loaded for same user
-    }
-  }, [pathname]);
-
   // Computed values
   const defaultCollection = useMemo(() => 
     collections.find(col => col.name === 'My Favorites') || null,
@@ -482,8 +431,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   );
 
   const hasCollections = collections.length > 0;
-  // 🔧 FIX: Prevent empty state flash - only show empty if we've actually tried to load data
-  const isEmpty = collections.length === 0 && !loading.isLoading && hasInitializedRef.current;
+  // Only show empty when we've actually fetched data
+  const isEmpty = collections.length === 0 && !loading.isLoading && hasFetchedForUser === user?.id;
   const totalCollections = collections.length;
 
   return {
@@ -514,4 +463,4 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     isEmpty,
     totalCollections
   };
-} 
+}

@@ -34,7 +34,7 @@ interface BulkDeleteState {
 }
 
 export default function HistoryPage() {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const historyContext = useHistoryContext();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
@@ -59,6 +59,7 @@ export default function HistoryPage() {
     loading: historyLoading,
     error: historyError,
     filteredHistory,
+    history,
     filters,
     hasMore,
     isEmpty,
@@ -74,7 +75,7 @@ export default function HistoryPage() {
     isItemDeleting,
     clearAllPendingOperations
   } = useSearchHistory({
-    autoFetch: true, // ✅ Already correct - always auto-fetch
+    autoFetch: true,
     initialLimit: 20,
     includeDetails: true,
     enableUndo: false,
@@ -97,12 +98,12 @@ export default function HistoryPage() {
     console.log('📚 History page auth state:', {
       hasUser: !!user,
       userEmail: user?.email,
-      loading,
+      authLoading,
       isOnline,
       queuedOperations: queuedOperationsCount,
       timestamp: new Date().toISOString()
     });
-  }, [user, loading, isOnline, queuedOperationsCount]);
+  }, [user, authLoading, isOnline, queuedOperationsCount]);
 
   // Check wishlist status for all products in history
   useEffect(() => {
@@ -314,20 +315,22 @@ export default function HistoryPage() {
     }
   }, [refresh, toast]);
 
-  // Early return for loading state
-  if (loading && !user) {
+  // Show loading state while checking authentication or loading history
+  if (authLoading || (historyLoading.isLoading && history.length === 0)) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-br from-muted/30 to-primary/5">
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
         </div>
       </div>
     );
   }
 
   // Early return for unauthenticated users
-  if (!loading && !user) {
+  if (!user) {
     return (
       <>
         <div className="h-full flex items-center justify-center bg-gradient-to-br from-muted/30 to-primary/5">

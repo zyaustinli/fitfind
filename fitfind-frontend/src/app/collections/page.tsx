@@ -23,16 +23,6 @@ export default function CollectionsPage() {
   const [createModalState, setCreateModalState] = useState<CreateCollectionModalState>({ isOpen: false });
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Debug logging for collections page auth state
-  useEffect(() => {
-    console.log('📁 Collections page auth state:', {
-      hasUser: !!user,
-      userEmail: user?.email,
-      authLoading,
-      timestamp: new Date().toISOString()
-    });
-  }, [user, authLoading]);
-
   const {
     collections,
     loading,
@@ -42,7 +32,7 @@ export default function CollectionsPage() {
     hasCollections,
     isEmpty
   } = useCollections({
-    autoFetch: true // 🔧 FIX: Always auto-fetch, let hook handle user checks internally
+    autoFetch: true
   });
 
   // Filter collections based on search query
@@ -51,9 +41,8 @@ export default function CollectionsPage() {
     (collection.description && collection.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Show loading state while checking authentication
-  if (authLoading) {
-    console.log('📁 Collections showing loading state');
+  // Show loading state while checking authentication or loading collections
+  if (authLoading || (loading.isLoading && collections.length === 0)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
         <div className="flex h-screen items-center justify-center">
@@ -68,7 +57,6 @@ export default function CollectionsPage() {
 
   // Show authentication required message if not signed in
   if (!user) {
-    console.log('📁 Collections showing sign-in required');
     return (
       <>
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
