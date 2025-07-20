@@ -648,7 +648,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
       hasInitializedRef.current = false;
-      clearAllPendingOperations();
+      // Call cleanup functions directly to avoid dependency issues
+      setDeletingItems(new Set());
+      setUndoableDeletes(new Map());
+      undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      undoTimeoutsRef.current.clear();
+      historyContext.clearAllDeletingItems();
+      clearQueue();
       return;
     }
 
@@ -658,9 +664,10 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       hasInitializedRef.current = true;
       // Set loading state before fetch to prevent empty state flash
       setLoading({ isLoading: true, message: 'Loading search history...' });
-      fetchHistory({ reset: true, includeDetails, offset: 0 });
+      // Call functions directly without dependencies to avoid instability
+      fetchHistory({ reset: true, includeDetails, offset: 0 }).catch(console.error);
     }
-  }, [user?.id, authLoading, autoFetch, includeDetails]); // 🔧 FIXED: Removed unstable function deps
+  }, [user?.id, authLoading, autoFetch, includeDetails]); // 🔧 FIXED: Stable dependencies only
 
   // 🔧 SIMPLIFIED user change reset - following useWishlist pattern (ONLY reset flag)
   useEffect(() => {

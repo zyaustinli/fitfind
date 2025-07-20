@@ -173,7 +173,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       hasInitializedRef.current = true;
       // Set loading state before fetch to prevent empty state flash
       setLoading({ isLoading: true, message: 'Loading collections...' });
-      fetchCollections();
+      // Call function directly to avoid dependency issues
+      fetchCollections().catch(console.error);
     }
   }, [user?.id, authLoading, autoFetch]); // 🔧 FIXED: Removed fetchCollections to prevent instability
 
