@@ -299,18 +299,6 @@ export async function getSearchSessionDetails(sessionId: string): Promise<{ succ
   return apiRequest<{ success: boolean; session?: any; error?: string }>(`/api/history/${sessionId}`, {}, true, 1 * 60 * 1000); // Cache for 1 minute
 }
 
-// Auth profile API functions
-export async function getProfile(): Promise<{ success: boolean; profile?: any; error?: string }> {
-  return apiRequest<{ success: boolean; profile?: any; error?: string }>('/api/auth/profile', {}, true, 1 * 60 * 1000); // Cache for 1 minute
-}
-
-export async function updateProfile(updates: any): Promise<{ success: boolean; profile?: any; error?: string }> {
-  return apiRequest<{ success: boolean; profile?: any; error?: string }>('/api/auth/profile', {
-    method: 'PUT',
-    body: JSON.stringify(updates),
-  });
-}
-
 // Collections API functions
 export async function getCollections(): Promise<CollectionsResponse> {
   return apiRequest<CollectionsResponse>('/api/collections', {}, true, 3 * 60 * 1000); // Cache for 3 minutes

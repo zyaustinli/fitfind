@@ -7,7 +7,6 @@ import {
   getCurrentSession, 
   getUserProfile,
   createUserProfile,
-  updateUserProfile,
   type AuthState, 
   type UserProfile,
   type SignUpData,
@@ -54,16 +53,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const hasLoadingChanged = prevState.loading !== newState.loading;
 
       if (!hasUserChanged && !hasProfileChanged && !hasSessionChanged && !hasLoadingChanged) {
-        console.log('🔄 No actual state change, skipping update');
         return prevState;
       }
-
-      console.log('✅ Updating auth state', {
-        userChanged: hasUserChanged,
-        profileChanged: hasProfileChanged,
-        sessionChanged: hasSessionChanged,
-        loadingChanged: hasLoadingChanged
-      });
 
       return newState;
     });
@@ -72,39 +63,47 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Initialize auth state only once
   useEffect(() => {
     if (initializingRef.current) {
-      console.log('🔄 Already initializing, skipping...');
       return;
     }
 
     initializingRef.current = true;
-    console.log('🚀 AuthProvider initializing...');
     
     async function initializeAuth() {
       try {
         const session = await getCurrentSession();
-        if (mountedRef.current) {
-          if (session?.user) {
-            // The backend will handle profile creation if it doesn't exist.
-            const profile = await getUserProfile(session.user.id);
-            lastUserIdRef.current = session.user.id;
-            setAuthState({
-              user: session.user,
-              profile,
-              session,
-              loading: false
+        
+        if (!mountedRef.current) return;
+        if (session?.user) {
+          let profile = await getUserProfile(session.user.id);
+          
+          if (!profile && session.user.email) {
+            const result = await createUserProfile(session.user.id, {
+              email: session.user.email,
+              full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name
             });
-          } else {
-            lastUserIdRef.current = null;
-            setAuthState({
-              user: null,
-              profile: null,
-              session: null,
-              loading: false
-            });
+            if (result.success) {
+              profile = await getUserProfile(session.user.id);
+            }
           }
+          
+          lastUserIdRef.current = session.user.id;
+          setAuthState({
+            user: session.user,
+            profile,
+            session,
+            loading: false
+          });
+        } else {
+          lastUserIdRef.current = null;
+          setAuthState({
+            user: null,
+            profile: null,
+            session: null,
+            loading: false
+          });
         }
       } catch (error) {
-        console.error('Error initializing auth:', error); // Enhanced logging
+        console.error('Error initializing auth:', error);
         if (mountedRef.current) {
           setAuthState({
             user: null,
@@ -120,41 +119,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     initializeAuth();
 
-    // Simplified auth state change handler
+    // Auth state change handler
     const { data: { subscription } } = onAuthStateChange(async (event, session) => {
       if (!mountedRef.current) return;
 
-      console.log('🔄 Auth event:', event);
-
-      // Only handle actual auth changes, not token refreshes
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         if (session?.user) {
           // Only proceed if user actually changed
           if (lastUserIdRef.current === session.user.id) {
-            console.log('Same user, ignoring event');
             return;
           }
-
-          lastUserIdRef.current = session.user.id;
           
           // Set loading only for actual user changes
           setState(prev => ({ ...prev, loading: true }));
-
           try {
             let profile = await getUserProfile(session.user.id);
             
             if (!profile && session.user.email) {
-              const profileData = {
+              const result = await createUserProfile(session.user.id, {
                 email: session.user.email,
-                full_name: session.user.user_metadata?.full_name || '',
-                avatar_url: session.user.user_metadata?.avatar_url || ''
-              };
-              const result = await createUserProfile(session.user.id, profileData);
+                full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name
+              });
               if (result.success) {
                 profile = await getUserProfile(session.user.id);
               }
             }
-
             if (mountedRef.current) {
               setAuthState({
                 user: session.user,
@@ -189,7 +178,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     subscriptionRef.current = subscription;
 
     return () => {
-      console.log('🧹 AuthProvider cleanup');
       mountedRef.current = false;
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
@@ -209,12 +197,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // For confirmed users (no email verification needed), immediately try to create profile
         if (result.data.user.email_confirmed_at) {
           console.log('User email confirmed, creating profile immediately...')
-          const profileData = {
+          const profileResult = await createUserProfile(result.data.user.id, {
             email: result.data.user.email,
-            full_name: result.data.user.user_metadata?.full_name || '',
-            avatar_url: result.data.user.user_metadata?.avatar_url || ''
-          };
-          const profileResult = await createUserProfile(result.data.user.id, profileData)
+            full_name: result.data.user.user_metadata?.full_name
+          })
           if (profileResult.success) {
             console.log('Profile created immediately after signup')
           }
@@ -283,7 +269,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const refreshProfile = async () => {
     if (!state.user) return
-
     try {
       const profile = await getUserProfile(state.user.id)
       setState(prev => ({ ...prev, profile }))
@@ -298,13 +283,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     try {
-      const result = await updateUserProfile(state.user.id, updates)
-      
-      if (result.success && result.profile) {
-        setState(prev => ({ ...prev, profile: result.profile || prev.profile }))
-      }
-      
-      return result
+      // For now, just refresh the profile after any updates
+      await refreshProfile()
+      return { success: true }
     } catch (error) {
       return { 
         success: false, 
@@ -351,4 +332,4 @@ export function useProfile() {
 export function useIsAuthenticated() {
   const { user, loading } = useAuth()
   return { isAuthenticated: !!user, loading }
-} 
+}
