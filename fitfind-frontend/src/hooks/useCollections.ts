@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Collection,
   CollectionsResponse,
@@ -75,22 +75,27 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     code: undefined
   });
   
-  // Track if we've fetched data for the current user
-  const [hasFetchedForUser, setHasFetchedForUser] = useState<string | null>(null);
+  // Refs for tracking without causing re-renders
+  const lastUserIdRef = useRef<string | null>(null);
+  const isInitializedRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   // Clear error helper
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
-  // Fetch collections - stable function that doesn't cause re-renders
+  // Fetch collections function
   const fetchCollections = useCallback(async () => {
-    if (!user) {
-      console.log('📁 Collections: No user, skipping fetch');
+    if (!user || isFetchingRef.current) {
+      console.log('📁 Collections: Skipping fetch - no user or already fetching');
       return;
     }
 
+    isFetchingRef.current = true;
     console.log('📁 Collections: Fetching collections for user:', user.email);
+    
     setLoading({
       isLoading: true,
       message: 'Loading collections...'
@@ -100,14 +105,19 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     try {
       const response: CollectionsResponse = await getCollections();
       
+      // Check if component is still mounted
+      if (!mountedRef.current) return;
+      
       if (response.success) {
         console.log('📁 Collections: Fetched', response.collections.length, 'collections');
         setCollections(response.collections);
-        // ✅ Don't set hasFetchedForUser here - let useEffect handle it after state updates
+        isInitializedRef.current = true;
       } else {
         throw new Error(response.error || 'Failed to fetch collections');
       }
     } catch (err) {
+      if (!mountedRef.current) return;
+      
       const message = err instanceof Error ? err.message : 'Failed to load collections';
       console.error('📁 Collections: Fetch error:', message);
       setError({
@@ -115,58 +125,83 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         message,
         code: undefined
       });
+      isInitializedRef.current = true; // Mark as initialized even on error
     } finally {
-      setLoading({ isLoading: false });
+      if (mountedRef.current) {
+        setLoading({ isLoading: false });
+      }
+      isFetchingRef.current = false;
     }
   }, [user, clearError]);
 
-  // Effect to track when we've successfully fetched data for a user
-  // This runs AFTER collections state has been updated, preventing race conditions
+  // Single useEffect for all data management
   useEffect(() => {
-    if (user && collections.length >= 0 && !loading.isLoading && !error.hasError) {
-      // Only set if we haven't marked this user as fetched yet
-      if (hasFetchedForUser !== user.id) {
-        console.log('📁 Collections: Marking user as fetched after successful data load:', user.email);
-        setHasFetchedForUser(user.id);
-      }
-    }
-  }, [user, collections, loading.isLoading, error.hasError, hasFetchedForUser]);
-
-  // Single effect for data fetching - simplified and stable  
-  useEffect(() => {
-    console.log('📁 Collections: Main effect check', {
+    console.log('📁 Collections: Effect running', {
       authLoading,
       hasUser: !!user,
       userId: user?.id,
-      hasFetchedForUser,
+      lastUserId: lastUserIdRef.current,
       autoFetch,
-      collectionsCount: collections.length,
-      isLoading: loading.isLoading
+      isInitialized: isInitializedRef.current,
+      collectionsCount: collections.length
     });
 
-    // Skip if auth is still loading
+    // If auth is still loading, wait
     if (authLoading) {
       console.log('📁 Collections: Auth loading, waiting...');
       return;
     }
 
-    // Clear data when user logs out
+    // If user logged out, clear everything
     if (!user) {
       console.log('📁 Collections: No user, clearing data');
       setCollections([]);
       setCurrentCollection(null);
       setCollectionItems([]);
       setCollectionPagination(null);
-      setHasFetchedForUser(null);
+      lastUserIdRef.current = null;
+      isInitializedRef.current = false;
       return;
     }
 
-    // Fetch if we haven't fetched for this user yet and autoFetch is enabled
-    if (autoFetch && user.id !== hasFetchedForUser && !loading.isLoading) {
-      console.log('📁 Collections: Need to fetch for new user');
+    // If user changed, reset and fetch
+    if (user.id !== lastUserIdRef.current) {
+      console.log('📁 Collections: User changed, resetting');
+      lastUserIdRef.current = user.id;
+      isInitializedRef.current = false;
+      setCollections([]);
+      setCurrentCollection(null);
+      setCollectionItems([]);
+      setCollectionPagination(null);
+      setError({ hasError: false });
+      
+      if (autoFetch) {
+        fetchCollections();
+      }
+      return;
+    }
+
+    // If same user but not initialized and autoFetch enabled, fetch
+    if (user.id === lastUserIdRef.current && !isInitializedRef.current && autoFetch) {
+      console.log('📁 Collections: Same user, not initialized, fetching');
       fetchCollections();
     }
-  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, loading.isLoading, fetchCollections]);
+
+    // Cleanup function
+    return () => {
+      // Don't clear data on unmount, just stop any ongoing operations
+      isFetchingRef.current = false;
+    };
+  }, [user?.id, authLoading, autoFetch, fetchCollections]);
+
+  // Mount/unmount tracking
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      isFetchingRef.current = false;
+    };
+  }, []);
 
   // Collection CRUD operations
   const createNewCollection = useCallback(async (
@@ -295,6 +330,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         currentOffset
       );
 
+      if (!mountedRef.current) return;
+
       if (response.success) {
         if (response.collection) {
           setCurrentCollection(response.collection);
@@ -308,9 +345,10 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to fetch items');
       }
     } catch (err) {
+      if (!mountedRef.current) return;
+      
       // Check if this is a 404 error (collection not found)
       if (err && typeof err === 'object' && 'status' in err && err.status === 404) {
-        // Don't set error state for 404s - let UI handle it
         console.log('📁 Collections: Collection not found');
       } else {
         const message = err instanceof Error ? err.message : 'Failed to load items';
@@ -321,7 +359,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         });
       }
     } finally {
-      setLoading({ isLoading: false });
+      if (mountedRef.current) {
+        setLoading({ isLoading: false });
+      }
     }
   }, [user, collectionPagination?.offset]);
 
@@ -443,9 +483,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   );
 
   const hasCollections = collections.length > 0;
-  // ✅ Improved isEmpty logic: only show empty when we have a user, we're not loading, 
-  // there's no error, and we have actually attempted to fetch (either success or error occurred)
-  const isEmpty = user && collections.length === 0 && !loading.isLoading && !error.hasError && hasFetchedForUser === user.id;
+  // Simple isEmpty logic: show empty only if user exists, not loading, not error, and initialized but no collections
+  const isEmpty = !!user && !loading.isLoading && !error.hasError && isInitializedRef.current && collections.length === 0;
   const totalCollections = collections.length;
 
   return {

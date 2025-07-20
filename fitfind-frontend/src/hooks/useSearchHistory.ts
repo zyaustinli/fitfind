@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   SearchHistoryItem, 
   SearchHistoryResponse, 
@@ -114,29 +114,30 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const [deletingItems, setDeletingItems] = useState<Set<string>>(new Set());
   const [undoableDeletes, setUndoableDeletes] = useState<Map<string, DeletedItemState>>(new Map());
   
-  // Track if we've fetched data for the current user
-  const [hasFetchedForUser, setHasFetchedForUser] = useState<string | null>(null);
-  const [isFetching, setIsFetching] = useState(false);
-  
-  // Store undo timeouts
-  const undoTimeouts = new Map<string, NodeJS.Timeout>();
+  // Refs for tracking without causing re-renders
+  const lastUserIdRef = useRef<string | null>(null);
+  const isInitializedRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const undoTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
-  // Fetch history implementation - stable function
+  // Fetch history implementation
   const fetchHistory = useCallback(async (options: { reset?: boolean; includeDetails?: boolean; offset?: number } = {}) => {
-    if (!user || isFetching) {
-      console.log('📚 History: Skipping fetch', { hasUser: !!user, isFetching });
+    if (!user || isFetchingRef.current) {
+      console.log('📚 History: Skipping fetch - no user or already fetching');
       return;
     }
 
     const { reset = false, includeDetails: fetchDetails = includeDetails, offset } = options;
     const currentOffset = offset !== undefined ? offset : (reset ? 0 : pagination.offset);
     
+    isFetchingRef.current = true;
     console.log('📚 History: Fetching', { reset, currentOffset, userId: user.id });
-    setIsFetching(true);
+    
     setLoading({
       isLoading: true,
       message: reset ? 'Loading search history...' : 'Loading more...'
@@ -164,13 +165,15 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       }
     );
 
+    if (!mountedRef.current) return;
+
     if (result.success && result.data) {
       const response = result.data;
       console.log('📚 History: Fetched', response.history.length, 'items');
       
       setHistory(prev => reset ? response.history : [...prev, ...response.history]);
       setPagination(response.pagination);
-      // ✅ Don't set hasFetchedForUser here - let useEffect handle it after state updates
+      isInitializedRef.current = true;
       
       // Notify global context
       if (reset) {
@@ -182,65 +185,89 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         message: result.error,
         code: undefined
       });
+      isInitializedRef.current = true; // Mark as initialized even on error
     }
     
-    setIsFetching(false);
-    setLoading({ isLoading: false });
-  }, [user, isFetching, pagination.limit, pagination.offset, includeDetails, executeWithRetry, historyContext, clearError]);
-
-  // Effect to track when we've successfully fetched data for a user
-  // This runs AFTER history state has been updated, preventing race conditions
-  useEffect(() => {
-    if (user && history.length >= 0 && !loading.isLoading && !error.hasError) {
-      // Only set if we haven't marked this user as fetched yet
-      if (hasFetchedForUser !== user.id) {
-        console.log('📚 History: Marking user as fetched after successful data load:', user.email);
-        setHasFetchedForUser(user.id);
-      }
+    isFetchingRef.current = false;
+    if (mountedRef.current) {
+      setLoading({ isLoading: false });
     }
-  }, [user, history, loading.isLoading, error.hasError, hasFetchedForUser]);
+  }, [user, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError]);
 
-  // Single effect for data fetching - simplified and stable
+  // Single useEffect for all data management
   useEffect(() => {
-    console.log('📚 History: Main effect check', {
+    console.log('📚 History: Effect running', {
       authLoading,
       hasUser: !!user,
       userId: user?.id,
-      hasFetchedForUser,
+      lastUserId: lastUserIdRef.current,
       autoFetch,
-      historyCount: history.length,
-      isLoading: loading.isLoading,
-      isFetching
+      isInitialized: isInitializedRef.current,
+      historyCount: history.length
     });
 
-    // Skip if auth is still loading
+    // If auth is still loading, wait
     if (authLoading) {
       console.log('📚 History: Auth loading, waiting...');
       return;
     }
 
-    // Clear data when user logs out
+    // If user logged out, clear everything
     if (!user) {
       console.log('📚 History: No user, clearing data');
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
-      setHasFetchedForUser(null);
       setDeletingItems(new Set());
       setUndoableDeletes(new Map());
       // Clear all undo timeouts
-      undoTimeouts.forEach(timeout => clearTimeout(timeout));
-      undoTimeouts.clear();
+      undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      undoTimeoutsRef.current.clear();
       historyContext.clearAllDeletingItems();
       clearQueue();
+      lastUserIdRef.current = null;
+      isInitializedRef.current = false;
       return;
     }
 
-    // Fetch if we haven't fetched for this user yet and autoFetch is enabled
-    if (autoFetch && user.id !== hasFetchedForUser && !isFetching && !loading.isLoading) {
-      console.log('📚 History: Need to fetch for new user');
+    // If user changed, reset and fetch
+    if (user.id !== lastUserIdRef.current) {
+      console.log('📚 History: User changed, resetting');
+      lastUserIdRef.current = user.id;
+      isInitializedRef.current = false;
+      setHistory([]);
+      setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
+      setError({ hasError: false });
+      
+      if (autoFetch) {
+        fetchHistory({ reset: true });
+      }
+      return;
+    }
+
+    // If same user but not initialized and autoFetch enabled, fetch
+    if (user.id === lastUserIdRef.current && !isInitializedRef.current && autoFetch) {
+      console.log('📚 History: Same user, not initialized, fetching');
       fetchHistory({ reset: true });
     }
-  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, isFetching, loading.isLoading, fetchHistory]);
+
+    // Cleanup function
+    return () => {
+      // Don't clear data on unmount, just stop any ongoing operations
+      isFetchingRef.current = false;
+    };
+  }, [user?.id, authLoading, autoFetch, fetchHistory, historyContext, clearQueue]);
+
+  // Mount/unmount tracking
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      isFetchingRef.current = false;
+      // Clear all undo timeouts on unmount
+      undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      undoTimeoutsRef.current.clear();
+    };
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
@@ -359,10 +386,10 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
             newMap.delete(historyId);
             return newMap;
           });
-          undoTimeouts.delete(historyId);
+          undoTimeoutsRef.current.delete(historyId);
         }, maxUndoTimeout);
         
-        undoTimeouts.set(historyId, undoTimeout);
+        undoTimeoutsRef.current.set(historyId, undoTimeout);
       }
 
       // Make the actual API call with retry logic
@@ -460,10 +487,10 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
     try {
       // Clear undo timeout
-      const timeout = undoTimeouts.get(historyId);
+      const timeout = undoTimeoutsRef.current.get(historyId);
       if (timeout) {
         clearTimeout(timeout);
-        undoTimeouts.delete(historyId);
+        undoTimeoutsRef.current.delete(historyId);
       }
 
       // Restore item to original position
@@ -595,8 +622,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const clearAllPendingOperations = useCallback(() => {
     setDeletingItems(new Set());
     setUndoableDeletes(new Map());
-    undoTimeouts.forEach(timeout => clearTimeout(timeout));
-    undoTimeouts.clear();
+    undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+    undoTimeoutsRef.current.clear();
     historyContext.clearAllDeletingItems();
     clearQueue();
   }, [historyContext, clearQueue]);
@@ -635,9 +662,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   }, [history, filters]);
 
   const hasMore = pagination.has_more;
-  // ✅ Improved isEmpty logic: only show empty when we have a user, we're not loading, 
-  // there's no error, and we have actually attempted to fetch (either success or error occurred)
-  const isEmpty = user && history.length === 0 && !loading.isLoading && !error.hasError && hasFetchedForUser === user.id;
+  // Simple isEmpty logic: show empty only if user exists, not loading, not error, and initialized but no history
+  const isEmpty = !!user && !loading.isLoading && !error.hasError && isInitializedRef.current && history.length === 0;
   const totalCount = pagination.total_count || 0;
 
   return {
