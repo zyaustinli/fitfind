@@ -616,23 +616,29 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   }, [history, filters]);
 
   const hasMore = pagination.has_more;
-  const isEmpty = history.length === 0 && !loading.isLoading;
+  // 🔧 FIX: Prevent empty state flash - only show empty if we've actually tried to load data
+  const isEmpty = history.length === 0 && !loading.isLoading && hasInitializedRef.current;
   const totalCount = pagination.total_count || 0;
 
-  // 🔧 CONSOLIDATED initialization effect - following proven useWishlist pattern  
+  // 🔧 CONSOLIDATED initialization effect - FIXED dependencies to prevent instability
   useEffect(() => {
-    if (!autoFetch) return;
-    
-    console.log('📚 Search History: Consolidated initialization check', {
+    console.log('📚 Search History: Initialization check', {
       authLoading,
       hasUser: !!user,
       userEmail: user?.email,
-      hasInitialized: hasInitializedRef.current
+      hasInitialized: hasInitializedRef.current,
+      autoFetch
     });
     
     // Skip if auth is still loading
     if (authLoading) {
       console.log('📚 Search History: Auth still loading, skipping');
+      return;
+    }
+
+    // Skip if autoFetch is disabled
+    if (!autoFetch) {
+      console.log('📚 Search History: AutoFetch disabled, skipping');
       return;
     }
 
@@ -650,9 +656,11 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     if (!hasInitializedRef.current) {
       console.log('📚 Search History: Initializing for user:', user.id);
       hasInitializedRef.current = true;
+      // Set loading state before fetch to prevent empty state flash
+      setLoading({ isLoading: true, message: 'Loading search history...' });
       fetchHistory({ reset: true, includeDetails, offset: 0 });
     }
-  }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails, clearAllPendingOperations]);
+  }, [user?.id, authLoading, autoFetch, includeDetails]); // 🔧 FIXED: Removed unstable function deps
 
   // 🔧 SIMPLIFIED user change reset - following useWishlist pattern (ONLY reset flag)
   useEffect(() => {

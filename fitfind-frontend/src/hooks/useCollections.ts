@@ -134,20 +134,25 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user?.id]); // 🔧 FIX: Stabilize dependencies - only depend on user ID
 
-  // 🔧 CONSOLIDATED initialization effect - following proven useWishlist pattern
+  // 🔧 CONSOLIDATED initialization effect - FIXED dependencies to prevent instability
   useEffect(() => {
-    if (!autoFetch) return;
-    
-    console.log('📁 Collections: Consolidated initialization check', {
+    console.log('📁 Collections: Initialization check', {
       authLoading,
       hasUser: !!user,
       userEmail: user?.email,
-      hasInitialized: hasInitializedRef.current
+      hasInitialized: hasInitializedRef.current,
+      autoFetch
     });
     
     // Skip if auth is still loading
     if (authLoading) {
       console.log('📁 Collections: Auth still loading, skipping');
+      return;
+    }
+
+    // Skip if autoFetch is disabled
+    if (!autoFetch) {
+      console.log('📁 Collections: AutoFetch disabled, skipping');
       return;
     }
 
@@ -166,9 +171,11 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     if (!hasInitializedRef.current) {
       console.log('📁 Collections: Initializing for user:', user.email);
       hasInitializedRef.current = true;
+      // Set loading state before fetch to prevent empty state flash
+      setLoading({ isLoading: true, message: 'Loading collections...' });
       fetchCollections();
     }
-  }, [user?.id, authLoading, autoFetch, fetchCollections]);
+  }, [user?.id, authLoading, autoFetch]); // 🔧 FIXED: Removed fetchCollections to prevent instability
 
   const createNewCollection = useCallback(async (
     name: string,
@@ -474,7 +481,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   );
 
   const hasCollections = collections.length > 0;
-  const isEmpty = collections.length === 0;
+  // 🔧 FIX: Prevent empty state flash - only show empty if we've actually tried to load data
+  const isEmpty = collections.length === 0 && !loading.isLoading && hasInitializedRef.current;
   const totalCollections = collections.length;
 
   return {

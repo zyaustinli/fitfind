@@ -42,7 +42,7 @@ export default function CollectionsPage() {
     hasCollections,
     isEmpty
   } = useCollections({
-    autoFetch: !!user
+    autoFetch: true // 🔧 FIX: Always auto-fetch, let hook handle user checks internally
   });
 
   // Filter collections based on search query

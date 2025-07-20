@@ -40,7 +40,7 @@ export default function WishlistPage() {
     hasCollections,
     isEmpty
   } = useCollections({
-    autoFetch: !!user
+    autoFetch: true // 🔧 FIX: Always auto-fetch, let hook handle user checks internally
   });
 
   // Show loading state while checking authentication

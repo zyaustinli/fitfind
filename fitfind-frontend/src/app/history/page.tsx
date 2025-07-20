@@ -74,7 +74,7 @@ export default function HistoryPage() {
     isItemDeleting,
     clearAllPendingOperations
   } = useSearchHistory({
-    autoFetch: true,
+    autoFetch: true, // ✅ Already correct - always auto-fetch
     initialLimit: 20,
     includeDetails: true,
     enableUndo: false,
