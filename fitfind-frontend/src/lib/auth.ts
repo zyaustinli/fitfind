@@ -61,7 +61,7 @@ export async function signIn(data: SignInData) {
 
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
-
+  
   if (error) {
     return { success: false, error: error.message };
   }
@@ -69,14 +69,18 @@ export async function signOut() {
   return { success: true };
 }
 
-export async function getCurrentSession() {
-  const { data: { session }, error } = await supabase.auth.getSession();
+export async function resetPassword(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
   
   if (error) {
-    console.error('Error getting session:', error);
-    return null;
+    return { success: false, error: error.message };
   }
 
+  return { success: true };
+}
+
+export async function getCurrentSession(): Promise<Session | null> {
+  const { data: { session } } = await supabase.auth.getSession();
   return session;
 }
 
@@ -95,42 +99,19 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   return data;
 }
 
-export async function createUserProfile(user: User): Promise<{ success: boolean; error?: string; profile?: UserProfile }> {
-  const profileData = {
-    id: user.id,
-    email: user.email!,
-    full_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
-    avatar_url: user.user_metadata?.avatar_url || null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-
-  const { data, error } = await supabase
+export async function createUserProfile(userId: string, data: Partial<UserProfile>) {
+  const { error } = await supabase
     .from('profiles')
-    .insert([profileData])
-    .select()
-    .single();
+    .insert([{ id: userId, ...data }]);
 
   if (error) {
     console.error('Error creating user profile:', error);
     return { success: false, error: error.message };
   }
 
-  return { success: true, profile: data };
+  return { success: true };
 }
 
 export function onAuthStateChange(callback: (event: string, session: Session | null) => void) {
   return supabase.auth.onAuthStateChange(callback);
-}
-
-export async function resetPassword(email: string) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
-  });
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  return { success: true };
 }

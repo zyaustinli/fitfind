@@ -14,7 +14,6 @@ import {
   CollectionUpdateRequest,
   AddItemToCollectionRequest
 } from '@/types';
-import { supabase } from '@/lib/supabase';
 
 // API Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -70,30 +69,16 @@ class ApiCache {
   delete(key: string): void {
     this.cache.delete(key);
   }
-
-  // Make cache accessible for pattern matching
-  get keys(): string[] {
-    return Array.from(this.cache.keys());
-  }
 }
 
 const apiCache = new ApiCache();
 
 // Helper function to get auth headers
-const getAuthHeaders = async () => {
+const getAuthHeaders = () => {
   if (typeof window === 'undefined') return {};
   
-  try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) {
-      console.warn('Error getting Supabase session:', error);
-      return {};
-    }
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  } catch (error) {
-    console.warn('Failed to get Supabase session:', error);
-    return {};
-  }
+  const token = localStorage.getItem('supabase.auth.token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 // Generic API fetch wrapper with caching
@@ -121,7 +106,7 @@ async function apiRequest<T>(
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(await getAuthHeaders()),
+      ...getAuthHeaders(),
       ...options.headers,
     },
   });
@@ -166,7 +151,7 @@ export async function uploadOutfitImage(
   const response = await fetch(`${API_BASE_URL}/api/upload`, {
     method: 'POST',
     headers: {
-      ...(await getAuthHeaders()),
+      ...getAuthHeaders(),
     },
     body: formData,
   });
@@ -220,12 +205,12 @@ export async function redoSearch(
 
 // Wishlist API functions
 export async function getWishlist(
-  offset: number = 0,
+  page: number = 1,
   limit: number = 20,
   filters?: WishlistFilters
 ): Promise<WishlistResponse> {
   const params = new URLSearchParams({
-    offset: offset.toString(),
+    page: page.toString(),
     limit: limit.toString(),
     ...(filters?.source && { source: filters.source }),
     ...(filters?.minPrice && { min_price: filters.minPrice.toString() }),
@@ -247,12 +232,7 @@ export async function addToWishlist(
   });
   
   // Clear wishlist cache after adding item
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/wishlist`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
+  apiCache.delete('GET:/api/wishlist');
   
   return result;
 }
@@ -263,12 +243,7 @@ export async function removeFromWishlist(productId: string): Promise<{ success: 
   });
   
   // Clear wishlist cache after removing item
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/wishlist`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
+  apiCache.delete('GET:/api/wishlist');
   
   return result;
 }
@@ -284,11 +259,11 @@ export async function checkWishlistStatus(
 
 // Search history API functions
 export async function getSearchHistory(
-  offset: number = 0,
+  page: number = 1,
   limit: number = 20
 ): Promise<SearchHistoryResponse> {
   const params = new URLSearchParams({
-    offset: offset.toString(),
+    page: page.toString(),
     limit: limit.toString(),
   });
 
@@ -301,12 +276,7 @@ export async function deleteSearchHistory(historyId: string): Promise<{ success:
   });
   
   // Clear history cache after deleting item
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/history`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
+  apiCache.delete('GET:/api/history');
   
   return result;
 }
@@ -320,12 +290,7 @@ export async function bulkDeleteSearchHistory(
   });
   
   // Clear history cache after bulk delete
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/history`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
+  apiCache.delete('GET:/api/history');
   
   return result;
 }
@@ -345,11 +310,11 @@ export async function getCollection(collectionId: string): Promise<CollectionRes
 
 export async function getCollectionItems(
   collectionId: string,
-  offset: number = 0,
+  page: number = 1,
   limit: number = 20
 ): Promise<CollectionItemsResponse> {
   const params = new URLSearchParams({
-    offset: offset.toString(),
+    page: page.toString(),
     limit: limit.toString(),
   });
 
@@ -359,93 +324,43 @@ export async function getCollectionItems(
 export async function createCollection(
   data: CollectionCreateRequest
 ): Promise<CollectionOperationResponse> {
-  const result = await apiRequest<CollectionOperationResponse>('/api/collections', {
+  return apiRequest<CollectionOperationResponse>('/api/collections', {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  
-  // Clear collections cache after creating new collection
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/collections`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
-  
-  return result;
 }
 
 export async function updateCollection(
   collectionId: string,
   data: CollectionUpdateRequest
 ): Promise<CollectionOperationResponse> {
-  const result = await apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}`, {
+  return apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
-  
-  // Clear related caches after updating collection
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/collections`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
-  
-  return result;
 }
 
 export async function deleteCollection(collectionId: string): Promise<CollectionOperationResponse> {
-  const result = await apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}`, {
+  return apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}`, {
     method: 'DELETE',
   });
-  
-  // Clear all collections-related caches after deleting collection
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/collections`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
-  
-  return result;
 }
 
 export async function addItemToCollection(
   collectionId: string,
   data: AddItemToCollectionRequest
 ): Promise<CollectionOperationResponse> {
-  const result = await apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}/items`, {
+  return apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}/items`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  
-  // Clear collection items cache after adding item
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/collections/(${collectionId}|$)`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
-  
-  return result;
 }
 
 export async function removeItemFromCollection(
   collectionId: string,
   savedItemId: string
 ): Promise<CollectionOperationResponse> {
-  const result = await apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}/items/${savedItemId}`, {
+  return apiRequest<CollectionOperationResponse>(`/api/collections/${collectionId}/items/${savedItemId}`, {
     method: 'DELETE',
   });
-  
-  // Clear collection items cache after removing item
-  const cachePattern = new RegExp(`GET:${API_BASE_URL}/api/collections/(${collectionId}|$)`);
-  apiCache.keys.forEach(key => {
-    if (cachePattern.test(key)) {
-      apiCache.delete(key);
-    }
-  });
-  
-  return result;
 }

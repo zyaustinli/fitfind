@@ -149,7 +149,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     clearError();
 
     try {
-      const response: CollectionResponse = await createCollection(name, { description, is_private: isPrivate });
+      const response: CollectionResponse = await createCollection({ name, description, is_private: isPrivate });
       
       if (response.success && response.collection) {
         setCollections(prev => [...prev, response.collection!]);
