@@ -77,7 +77,6 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   
   // Refs for tracking without causing re-renders
   const lastUserIdRef = useRef<string | null>(null);
-  const isInitializedRef = useRef(false);
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -89,12 +88,10 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   // Fetch collections function
   const fetchCollections = useCallback(async () => {
     if (!user || isFetchingRef.current) {
-      console.log('📁 Collections: Skipping fetch - no user or already fetching');
       return;
     }
 
     isFetchingRef.current = true;
-    console.log('📁 Collections: Fetching collections for user:', user.email);
     
     setLoading({
       isLoading: true,
@@ -105,13 +102,10 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     try {
       const response: CollectionsResponse = await getCollections();
       
-      // Check if component is still mounted
       if (!mountedRef.current) return;
       
       if (response.success) {
-        console.log('📁 Collections: Fetched', response.collections.length, 'collections');
         setCollections(response.collections);
-        isInitializedRef.current = true;
       } else {
         throw new Error(response.error || 'Failed to fetch collections');
       }
@@ -119,89 +113,51 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       if (!mountedRef.current) return;
       
       const message = err instanceof Error ? err.message : 'Failed to load collections';
-      console.error('📁 Collections: Fetch error:', message);
       setError({
         hasError: true,
         message,
         code: undefined
       });
-      isInitializedRef.current = true; // Mark as initialized even on error
     } finally {
       if (mountedRef.current) {
         setLoading({ isLoading: false });
       }
       isFetchingRef.current = false;
     }
-  }, [user, clearError]);
+  }, [user?.id, clearError]);
 
-  // Separate effect for handling auth state changes
+  // Main effect for auth state changes and fetching
   useEffect(() => {
-    console.log('📁 Collections: Auth state changed', {
-      authLoading,
-      hasUser: !!user,
-      userId: user?.id,
-      lastUserId: lastUserIdRef.current
-    });
-
-    // If auth is still loading, wait
     if (authLoading) {
-      console.log('📁 Collections: Auth loading, waiting...');
       return;
     }
 
-    // If user logged out, clear everything
     if (!user) {
-      console.log('📁 Collections: No user, clearing data');
       setCollections([]);
       setCurrentCollection(null);
       setCollectionItems([]);
       setCollectionPagination(null);
       lastUserIdRef.current = null;
-      isInitializedRef.current = false;
       return;
     }
 
-    // Only process user changes if not currently loading auth and user is stable
     const currentUserId = user.id;
-    const lastUserId = lastUserIdRef.current;
-
-    // If user changed, reset and fetch
-    if (currentUserId && currentUserId !== lastUserId) {
-      console.log('📁 Collections: User changed, resetting', { from: lastUserId, to: currentUserId });
+    if (currentUserId !== lastUserIdRef.current) {
       lastUserIdRef.current = currentUserId;
-      isInitializedRef.current = false;
       setCollections([]);
-      setCurrentCollection(null);
-      setCollectionItems([]);
-      setCollectionPagination(null);
-      setError({ hasError: false });
-      
-      // Defer the fetch slightly to ensure state is stable
       if (autoFetch) {
-        const timeoutId = setTimeout(() => {
-          if (mountedRef.current && !isFetchingRef.current) {
-            fetchCollections();
-          }
-        }, 50);
-        
-        return () => clearTimeout(timeoutId);
+        fetchCollections();
       }
-      return;
-    }
-
-    // If same user but not initialized and autoFetch enabled, fetch
-    if (currentUserId === lastUserId && !isInitializedRef.current && autoFetch && !isFetchingRef.current) {
-      console.log('📁 Collections: Same user, not initialized, fetching');
+    } else if (autoFetch && collections.length === 0 && !loading.isLoading) {
       fetchCollections();
     }
-  }, [authLoading, user?.id, autoFetch, fetchCollections]);
+  }, [authLoading, user?.id, autoFetch, fetchCollections, collections.length, loading.isLoading]);
 
   // Mount/unmount tracking
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      isFetchingRef.current = false;
     };
   }, []);
 
@@ -485,8 +441,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   );
 
   const hasCollections = collections.length > 0;
-  // Simple isEmpty logic: show empty only if user exists, not loading, not error, and initialized but no collections
-  const isEmpty = !!user && !loading.isLoading && !error.hasError && isInitializedRef.current && collections.length === 0;
+  const isEmpty = !!user && !loading.isLoading && !error.hasError && collections.length === 0;
   const totalCollections = collections.length;
 
   return {

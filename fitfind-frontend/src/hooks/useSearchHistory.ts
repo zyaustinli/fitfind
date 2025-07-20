@@ -116,7 +116,6 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   
   // Refs for tracking without causing re-renders
   const lastUserIdRef = useRef<string | null>(null);
-  const isInitializedRef = useRef(false);
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
   const undoTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -128,7 +127,6 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   // Fetch history implementation
   const fetchHistory = useCallback(async (options: { reset?: boolean; includeDetails?: boolean; offset?: number } = {}) => {
     if (!user || isFetchingRef.current) {
-      console.log('📚 History: Skipping fetch - no user or already fetching');
       return;
     }
 
@@ -136,7 +134,6 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     const currentOffset = offset !== undefined ? offset : (reset ? 0 : pagination.offset);
     
     isFetchingRef.current = true;
-    console.log('📚 History: Fetching', { reset, currentOffset, userId: user.id });
     
     setLoading({
       isLoading: true,
@@ -169,11 +166,9 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
     if (result.success && result.data) {
       const response = result.data;
-      console.log('📚 History: Fetched', response.history.length, 'items');
       
       setHistory(prev => reset ? response.history : [...prev, ...response.history]);
       setPagination(response.pagination);
-      isInitializedRef.current = true;
       
       // Notify global context
       if (reset) {
@@ -185,86 +180,44 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         message: result.error,
         code: undefined
       });
-      isInitializedRef.current = true; // Mark as initialized even on error
     }
     
     isFetchingRef.current = false;
     if (mountedRef.current) {
       setLoading({ isLoading: false });
     }
-  }, [user, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError]);
+  }, [user?.id, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError]);
 
-  // Separate effect for handling auth state changes
+  // Main effect for auth state changes and fetching
   useEffect(() => {
-    console.log('📚 History: Auth state changed', {
-      authLoading,
-      hasUser: !!user,
-      userId: user?.id,
-      lastUserId: lastUserIdRef.current
-    });
-
-    // If auth is still loading, wait
     if (authLoading) {
-      console.log('📚 History: Auth loading, waiting...');
       return;
     }
 
-    // If user logged out, clear everything
     if (!user) {
-      console.log('📚 History: No user, clearing data');
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
-      setDeletingItems(new Set());
-      setUndoableDeletes(new Map());
-      // Clear all undo timeouts
-      undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
-      undoTimeoutsRef.current.clear();
-      historyContext.clearAllDeletingItems();
-      clearQueue();
       lastUserIdRef.current = null;
-      isInitializedRef.current = false;
       return;
     }
 
-    // Only process user changes if not currently loading auth and user is stable
     const currentUserId = user.id;
-    const lastUserId = lastUserIdRef.current;
-
-    // If user changed, reset and fetch
-    if (currentUserId && currentUserId !== lastUserId) {
-      console.log('📚 History: User changed, resetting', { from: lastUserId, to: currentUserId });
+    if (currentUserId !== lastUserIdRef.current) {
       lastUserIdRef.current = currentUserId;
-      isInitializedRef.current = false;
       setHistory([]);
-      setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
-      setError({ hasError: false });
-      
-      // Defer the fetch slightly to ensure state is stable
       if (autoFetch) {
-        const timeoutId = setTimeout(() => {
-          if (mountedRef.current && !isFetchingRef.current) {
-            fetchHistory({ reset: true });
-          }
-        }, 50);
-        
-        return () => clearTimeout(timeoutId);
+        fetchHistory({ reset: true });
       }
-      return;
-    }
-
-    // If same user but not initialized and autoFetch enabled, fetch
-    if (currentUserId === lastUserId && !isInitializedRef.current && autoFetch && !isFetchingRef.current) {
-      console.log('📚 History: Same user, not initialized, fetching');
+    } else if (autoFetch && history.length === 0 && !loading.isLoading) {
       fetchHistory({ reset: true });
     }
-  }, [authLoading, user?.id, autoFetch, fetchHistory, historyContext, clearQueue]);
+  }, [authLoading, user?.id, autoFetch, fetchHistory, history.length, loading.isLoading]);
 
   // Mount/unmount tracking
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      isFetchingRef.current = false;
       // Clear all undo timeouts on unmount
       undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       undoTimeoutsRef.current.clear();
@@ -664,8 +617,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   }, [history, filters]);
 
   const hasMore = pagination.has_more;
-  // Simple isEmpty logic: show empty only if user exists, not loading, not error, and initialized but no history
-  const isEmpty = !!user && !loading.isLoading && !error.hasError && isInitializedRef.current && history.length === 0;
+  const isEmpty = !!user && !loading.isLoading && !error.hasError && history.length === 0;
   const totalCount = pagination.total_count || 0;
 
   return {
