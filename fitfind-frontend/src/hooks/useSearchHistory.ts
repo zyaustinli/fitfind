@@ -644,27 +644,19 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     }
   }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails, clearAllPendingOperations]);
 
-  // Reset initialization flag when user actually changes (not just on every render)
-  const prevUserIdRef = useRef<string | undefined>();
+  // Reset initialization flag when user changes (simple, reliable pattern like useWishlist)
   useEffect(() => {
-    const currentUserId = user?.id;
-    const prevUserId = prevUserIdRef.current;
-    
-    // Only reset if user ID actually changed (not just undefined to undefined)
-    if (prevUserId !== currentUserId && (prevUserId !== undefined || currentUserId !== undefined)) {
-      console.log('🔄 User changed, resetting search history initialization:', { prevUserId, currentUserId });
-      hasInitializedRef.current = false;
-      fetchingRef.current = false;
-      clearAllPendingOperations();
-    }
-    
-    prevUserIdRef.current = currentUserId;
+    console.log('🔄 Search History: User changed, resetting initialization');
+    hasInitializedRef.current = false;
+    fetchingRef.current = false;
+    clearAllPendingOperations();
   }, [user?.id, clearAllPendingOperations]);
 
-  // Clear state when navigating away from history pages
+  // Clear state when navigating away from history pages - CRITICAL FIX: also reset hasInitializedRef
   useEffect(() => {
     if (!pathname.startsWith('/history')) {
-      console.log('🧹 Navigated away from history, cleaning up state');
+      console.log('🧹 Search History: Navigated away, cleaning up state AND resetting initialization');
+      hasInitializedRef.current = false; // 🔑 KEY FIX: Reset initialization flag to force refetch on return
       fetchingRef.current = false;
       clearAllPendingOperations();
     }

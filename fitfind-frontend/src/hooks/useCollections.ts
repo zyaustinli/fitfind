@@ -436,31 +436,21 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user, removeFromCollection, addToCollection]);
 
-  // Reset initialization flag when user actually changes (not just on every render)
-  const prevUserIdRef = useRef<string | undefined>();
+  // Reset initialization flag when user changes (simple, reliable pattern like useWishlist)
   useEffect(() => {
-    const currentUserId = user?.id;
-    const prevUserId = prevUserIdRef.current;
-    
-    // Only reset if user ID actually changed (not just undefined to undefined)
-    if (prevUserId !== currentUserId && (prevUserId !== undefined || currentUserId !== undefined)) {
-      console.log('🔄 Collections: User changed, resetting initialization:', { prevUserId, currentUserId });
-      hasInitializedRef.current = false;
-      setCollections([]);
-      setCurrentCollection(null);
-      setCollectionItems([]);
-      setCollectionPagination(null);
-    }
-    
-    prevUserIdRef.current = currentUserId;
+    console.log('🔄 Collections: User changed, resetting initialization');
+    hasInitializedRef.current = false;
+    setCollections([]);
+    setCurrentCollection(null);
+    setCollectionItems([]);
+    setCollectionPagination(null);
   }, [user?.id]);
 
-  // Clear state when navigating away from collections pages
+  // Clear state when navigating away from collections pages - CRITICAL FIX: also reset hasInitializedRef
   useEffect(() => {
     if (!pathname.startsWith('/collections')) {
-      console.log('🧹 Collections: Navigated away, cleaning up state');
-      // Don't reset hasInitializedRef here - we want to keep the data for this user
-      // Just clear any loading states
+      console.log('🧹 Collections: Navigated away, cleaning up state AND resetting initialization');
+      hasInitializedRef.current = false; // 🔑 KEY FIX: Reset initialization flag to force refetch on return
       setLoading({ isLoading: false });
     }
   }, [pathname]);
