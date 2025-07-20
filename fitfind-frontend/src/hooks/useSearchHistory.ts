@@ -580,7 +580,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     undoTimeoutsRef.current.clear();
     historyContext.clearAllDeletingItems();
     clearQueue();
-  }, []); // Remove dependencies to make this stable - the refs/context should be stable
+  }, [historyContext, clearQueue]); // Keep necessary dependencies but make them stable
 
   // Client-side filtering and sorting
   const filteredHistory = useMemo(() => {
@@ -644,11 +644,21 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     }
   }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails, clearAllPendingOperations]);
 
-  // Reset initialization flag when user changes
+  // Reset initialization flag when user actually changes (not just on every render)
+  const prevUserIdRef = useRef<string | undefined>();
   useEffect(() => {
-    hasInitializedRef.current = false;
-    fetchingRef.current = false;
-    clearAllPendingOperations();
+    const currentUserId = user?.id;
+    const prevUserId = prevUserIdRef.current;
+    
+    // Only reset if user ID actually changed (not just undefined to undefined)
+    if (prevUserId !== currentUserId && (prevUserId !== undefined || currentUserId !== undefined)) {
+      console.log('🔄 User changed, resetting search history initialization:', { prevUserId, currentUserId });
+      hasInitializedRef.current = false;
+      fetchingRef.current = false;
+      clearAllPendingOperations();
+    }
+    
+    prevUserIdRef.current = currentUserId;
   }, [user?.id, clearAllPendingOperations]);
 
   // Clear state when navigating away from history pages

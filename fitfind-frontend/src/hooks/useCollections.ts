@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   Collection,
   CollectionsResponse,
@@ -77,6 +78,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   const mountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
+  const pathname = usePathname();
   
   // FIX #1: Add a ref to track pagination state without causing re-renders
   const paginationRef = useRef(collectionPagination);
@@ -93,11 +95,25 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   // Auto-fetch collections when user is authenticated
   useEffect(() => {
+    console.log('📁 Collections hook: checking initialization', {
+      authLoading,
+      hasUser: !!user,
+      userEmail: user?.email,
+      autoFetch,
+      hasInitialized: hasInitializedRef.current
+    });
+    
     if (!authLoading && user && autoFetch && !hasInitializedRef.current) {
+      console.log('📁 Collections hook: initializing for user:', user.email);
       hasInitializedRef.current = true;
       fetchCollections();
+    } else if (!user) {
+      // Clear data when no user
+      console.log('📁 Collections hook: clearing data - no user');
+      setCollections([]);
+      hasInitializedRef.current = false;
     }
-  }, [authLoading, user, autoFetch]);
+  }, [authLoading, user?.id, autoFetch, fetchCollections]);
 
   const clearError = useCallback(() => {
     setError({ hasError: false });
@@ -417,6 +433,35 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       return false;
     }
   }, [user, removeFromCollection, addToCollection]);
+
+  // Reset initialization flag when user actually changes (not just on every render)
+  const prevUserIdRef = useRef<string | undefined>();
+  useEffect(() => {
+    const currentUserId = user?.id;
+    const prevUserId = prevUserIdRef.current;
+    
+    // Only reset if user ID actually changed (not just undefined to undefined)
+    if (prevUserId !== currentUserId && (prevUserId !== undefined || currentUserId !== undefined)) {
+      console.log('🔄 Collections: User changed, resetting initialization:', { prevUserId, currentUserId });
+      hasInitializedRef.current = false;
+      setCollections([]);
+      setCurrentCollection(null);
+      setCollectionItems([]);
+      setCollectionPagination(null);
+    }
+    
+    prevUserIdRef.current = currentUserId;
+  }, [user?.id]);
+
+  // Clear state when navigating away from collections pages
+  useEffect(() => {
+    if (!pathname.startsWith('/collections')) {
+      console.log('🧹 Collections: Navigated away, cleaning up state');
+      // Don't reset hasInitializedRef here - we want to keep the data for this user
+      // Just clear any loading states
+      setLoading({ isLoading: false });
+    }
+  }, [pathname]);
 
   // Computed values
   const defaultCollection = useMemo(() => 
