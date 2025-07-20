@@ -1,32 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Heart, Grid3X3, List, Search, Filter, Sparkles, Stars, LayoutGrid, TrendingUp, FolderHeart } from "lucide-react";
+import { FolderHeart, Sparkles, Stars, Plus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useWishlist } from "@/hooks/useWishlist";
+import { useCollections } from "@/hooks/useCollections";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { 
-  WishlistGrid, 
-  WishlistFilters, 
-  WishlistActions 
-} from "@/components/wishlist";
-import { AddToCollectionModal } from "@/components/collections";
-import type { WishlistItemDetailed, BulkOperation } from "@/types";
+import { CollectionCard, CreateCollectionModal } from "@/components/collections";
 
 type ModalState = 
   | { isOpen: false }
   | { isOpen: true; mode: 'login' | 'signup' }
 
+type CreateCollectionModalState =
+  | { isOpen: false }
+  | { isOpen: true }
+
 export default function WishlistPage() {
   const { user, loading: authLoading } = useAuth();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
-  const [selectedItems, setSelectedItems] = useState<WishlistItemDetailed[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [addToCollectionItem, setAddToCollectionItem] = useState<WishlistItemDetailed | null>(null);
+  const [createModalState, setCreateModalState] = useState<CreateCollectionModalState>({ isOpen: false });
 
   // Debug logging for wishlist page auth state
   useEffect(() => {
@@ -39,21 +32,14 @@ export default function WishlistPage() {
   }, [user, authLoading]);
 
   const {
-    filteredWishlist,
-    filters,
+    collections,
     loading,
     error,
-    hasMore,
-    totalCount,
-    isEmpty,
-    setFilters,
-    resetFilters,
-    loadMore,
-    refresh,
-    removeItem,
-    addItem,
-    isInWishlist
-  } = useWishlist({
+    fetchCollections,
+    createNewCollection,
+    hasCollections,
+    isEmpty
+  } = useCollections({
     autoFetch: !!user
   });
 
@@ -84,13 +70,13 @@ export default function WishlistPage() {
               <div className="relative mb-8 mx-auto w-24 h-24">
                 <div className="absolute inset-0 bg-gradient-to-br from-pink-500/20 to-red-600/20 rounded-full blur-xl"></div>
                 <div className="relative w-24 h-24 bg-gradient-to-br from-pink-500/10 to-red-600/10 rounded-full flex items-center justify-center border border-pink-500/20">
-                  <Heart className="w-10 h-10 text-pink-600" />
+                  <FolderHeart className="w-10 h-10 text-pink-600" />
                   <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-red-600 animate-pulse" />
                 </div>
               </div>
               
               <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-pink-600 bg-clip-text text-transparent mb-4">
-                Your Wishlist
+                Your Collections
               </h1>
               <p className="text-muted-foreground mb-8 leading-relaxed">
                 Create an account to save your favorite fashion finds, organize them into collections, and never lose track of items you love.
@@ -103,7 +89,7 @@ export default function WishlistPage() {
                   size="lg"
                 >
                   <Sparkles className="w-5 h-5 mr-2" />
-                  Start Saving Items
+                  Start Your Collections
                 </Button>
                 
                 <Button 
@@ -130,26 +116,13 @@ export default function WishlistPage() {
     );
   }
 
-  // Handle bulk operations
-  const handleBulkOperation = async (operation: BulkOperation) => {
-    if (selectedItems.length === 0) return;
-
+  const handleCreateCollection = async (name: string, description?: string, isPrivate?: boolean): Promise<{ success: boolean; error?: string }> => {
     try {
-      switch (operation.type) {
-        case 'remove':
-          for (const item of selectedItems) {
-            await removeItem(item.products.id);
-          }
-          setSelectedItems([]);
-          setShowBulkActions(false);
-          break;
-        case 'add_to_collection':
-          // Handle adding to collection
-          // This would need implementation based on your collections system
-          break;
-      }
-    } catch (error) {
-      console.error('Bulk operation failed:', error);
+      await createNewCollection(name, description, false);
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create collection. Please try again.';
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -163,53 +136,33 @@ export default function WishlistPage() {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="w-10 h-10 bg-gradient-to-br from-pink-500/20 to-red-600/20 rounded-xl flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-pink-600" />
+                    <FolderHeart className="w-5 h-5 text-pink-600" />
                   </div>
                   <Stars className="absolute -top-1 -right-1 w-4 h-4 text-red-600 animate-pulse" />
                 </div>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground via-pink-600 to-red-600 bg-clip-text text-transparent">
-                  Your Wishlist
+                  Your Collections
                 </h1>
               </div>
               <p className="text-muted-foreground">
-                {totalCount > 0 ? `${totalCount} saved item${totalCount === 1 ? '' : 's'}` : 'No saved items yet'}
+                {collections.length > 0 ? `${collections.length} collection${collections.length === 1 ? '' : 's'}` : 'No collections yet'}
               </p>
             </div>
 
-            {/* Bulk Actions */}
-            {showBulkActions && selectedItems.length > 0 && (
-              <WishlistActions
-                selectedItems={selectedItems}
-                onBulkOperation={handleBulkOperation}
-                onCancel={() => {
-                  setShowBulkActions(false);
-                  setSelectedItems([]);
-                }}
-              />
-            )}
+            {/* Create Collection Button */}
+            <Button
+              onClick={() => setCreateModalState({ isOpen: true })}
+              className="bg-gradient-to-r from-pink-600 to-red-600 hover:from-pink-600/90 hover:to-red-600/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+              size="lg"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              New Collection
+            </Button>
           </div>
-
-          {/* Filters */}
-          <WishlistFilters
-            filters={filters}
-            onFiltersChange={setFilters}
-            onReset={resetFilters}
-            showAdvanced={showAdvancedFilters}
-            onToggleAdvanced={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            resultCount={filteredWishlist.length}
-            totalCount={totalCount}
-            onToggleBulkMode={() => {
-              setShowBulkActions(!showBulkActions);
-              if (showBulkActions) {
-                setSelectedItems([]);
-              }
-            }}
-            bulkMode={showBulkActions}
-          />
         </div>
 
         {/* Loading State */}
-        {loading.isLoading && filteredWishlist.length === 0 && (
+        {loading.isLoading && (
           <div className="flex items-center justify-center py-16">
             <div className="relative">
               <div className="w-12 h-12 border-4 border-pink-500/20 border-t-pink-600 rounded-full animate-spin"></div>
@@ -222,7 +175,7 @@ export default function WishlistPage() {
         {error.hasError && (
           <div className="text-center py-12">
             <div className="text-destructive mb-4">⚠️ {error.message}</div>
-            <Button onClick={refresh} variant="outline">
+            <Button onClick={fetchCollections} variant="outline">
               Try Again
             </Button>
           </div>
@@ -234,78 +187,42 @@ export default function WishlistPage() {
             <div className="relative mb-8 mx-auto w-24 h-24">
               <div className="absolute inset-0 bg-gradient-to-br from-pink-500/20 to-red-600/20 rounded-full blur-xl"></div>
               <div className="relative w-24 h-24 bg-gradient-to-br from-pink-500/10 to-red-600/10 rounded-full flex items-center justify-center border border-pink-500/20">
-                <Heart className="w-10 h-10 text-pink-600" />
+                <FolderHeart className="w-10 h-10 text-pink-600" />
               </div>
             </div>
             
-            <h3 className="text-2xl font-bold mb-4">Your wishlist is empty</h3>
+            <h3 className="text-2xl font-bold mb-4">Start Your First Collection</h3>
             <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
-              Start uploading outfit photos to discover fashion items, then save your favorites here to create your dream wardrobe.
+              Organize your saved fashion items into beautiful collections. Create themed groups like &quot;Work Outfits&quot;, &quot;Summer Essentials&quot;, or &quot;Dream Closet&quot;.
             </p>
             
             <Button
-              onClick={() => window.location.href = '/'}
+              onClick={() => setCreateModalState({ isOpen: true })}
               className="bg-gradient-to-r from-pink-600 to-red-600 hover:from-pink-600/90 hover:to-red-600/90 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
               size="lg"
             >
-              <Sparkles className="w-5 h-5 mr-2" />
-              Discover Fashion Items
+              <Plus className="w-5 h-5 mr-2" />
+              Create Your First Collection
             </Button>
           </div>
         )}
 
-        {/* Wishlist Grid */}
-        {!loading.isLoading && !error.hasError && filteredWishlist.length > 0 && (
-          <>
-            <WishlistGrid
-              items={filteredWishlist}
-              viewMode={filters.viewMode || 'grid'}
-              bulkMode={showBulkActions}
-              selectedItems={selectedItems}
-              onItemSelect={(item, selected) => {
-                if (selected) {
-                  setSelectedItems(prev => [...prev, item]);
-                } else {
-                  setSelectedItems(prev => prev.filter(i => i.id !== item.id));
-                }
-              }}
-              onRemoveItem={removeItem}
-              onAddToCollection={setAddToCollectionItem}
-            />
-
-            {/* Load More */}
-            {hasMore && (
-              <div className="text-center mt-8">
-                <Button
-                  onClick={loadMore}
-                  disabled={loading.isLoading}
-                  variant="outline"
-                  size="lg"
-                  className="gap-2"
-                >
-                  {loading.isLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    'Load More'
-                  )}
-                </Button>
-              </div>
-            )}
-          </>
+        {/* Collections Grid */}
+        {!loading.isLoading && !error.hasError && hasCollections && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {collections.map((collection) => (
+              <CollectionCard key={collection.id} collection={collection} />
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Add to Collection Modal */}
-      {addToCollectionItem && (
-        <AddToCollectionModal
-          open={!!addToCollectionItem}
-          onOpenChange={(open) => !open && setAddToCollectionItem(null)}
-          item={addToCollectionItem}
-        />
-      )}
+      {/* Create Collection Modal */}
+      <CreateCollectionModal
+        open={createModalState.isOpen}
+        onOpenChange={(open) => setCreateModalState({ isOpen: open })}
+        onCreateCollection={handleCreateCollection}
+      />
     </div>
   );
 }
