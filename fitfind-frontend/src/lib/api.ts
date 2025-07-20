@@ -50,26 +50,121 @@ const getAuthHeaders = async () => {
   }
 };
 
-// Generic API fetch wrapper
+// Token refresh helper
+const refreshTokenIfNeeded = async (): Promise<boolean> => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn('Error getting session for token refresh:', error);
+      return false;
+    }
+    
+    if (!session) {
+      console.log('No session found, cannot refresh token');
+      return false;
+    }
+    
+    // Check if token is close to expiring (within 5 minutes)
+    const expiresAt = session.expires_at;
+    const now = Math.floor(Date.now() / 1000);
+    const timeUntilExpiry = expiresAt - now;
+    
+    if (timeUntilExpiry < 300) { // Less than 5 minutes
+      console.log('Token expiring soon, attempting refresh...');
+      const { data, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.error('Failed to refresh token:', refreshError);
+        return false;
+      }
+      console.log('Token refreshed successfully');
+      return true;
+    }
+    
+    return true; // Token is still valid
+  } catch (error) {
+    console.error('Error in token refresh check:', error);
+    return false;
+  }
+};
+
+// Generic API fetch wrapper with automatic token refresh
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
+  retryCount = 0
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  
+  // Get fresh auth headers
+  const authHeaders = await getAuthHeaders();
   
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(await getAuthHeaders()),
+      ...authHeaders,
       ...options.headers,
     },
   });
 
+  // Handle authentication errors with automatic token refresh
+  if (response.status === 401 && retryCount < 2) {
+    const errorData = await response.json().catch(() => ({}));
+    
+    // Check if this is a token-related error
+    if (errorData.error_code === 'TOKEN_EXPIRED' || 
+        errorData.error_code === 'TOKEN_INVALID' ||
+        errorData.error?.includes('token') ||
+        errorData.error?.includes('Authentication')) {
+      
+      console.log(`Token error detected (${errorData.error_code}), attempting refresh...`);
+      
+      // Try to refresh the token
+      const refreshSuccessful = await refreshTokenIfNeeded();
+      
+      if (refreshSuccessful) {
+        console.log('Token refreshed, retrying API request...');
+        // Retry the request with fresh token
+        return apiRequest<T>(endpoint, options, retryCount + 1);
+      } else {
+        // Refresh failed, redirect to login
+        console.log('Token refresh failed, user needs to sign in again');
+        // Could trigger a redirect to login page or show auth modal
+        if (typeof window !== 'undefined') {
+          // Store the current URL for redirect after login
+          sessionStorage.setItem('redirectAfterLogin', window.location.pathname);
+        }
+      }
+    }
+  }
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    
+    // Provide more user-friendly error messages
+    let errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+    
+    // Handle specific error codes from our enhanced backend
+    switch (errorData.error_code) {
+      case 'TOKEN_EXPIRED':
+        errorMessage = 'Your session has expired. Please sign in again.';
+        break;
+      case 'TOKEN_INVALID':
+        errorMessage = 'Authentication error. Please sign in again.';
+        break;
+      case 'DB_CONNECTION_ERROR':
+        errorMessage = 'Database connection issue. Please try again in a moment.';
+        break;
+      case 'TIMEOUT':
+        errorMessage = 'Request timed out. Please try again.';
+        break;
+      case 'DB_QUERY_ERROR':
+        errorMessage = 'Database query failed. Please try again.';
+        break;
+    }
+    
     throw new ApiError(
-      errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+      errorMessage,
       response.status,
       errorData
     );

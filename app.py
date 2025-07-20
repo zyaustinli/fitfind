@@ -8,6 +8,7 @@ import os
 import uuid
 from werkzeug.utils import secure_filename
 import json
+import jwt
 from search_recommendation import outfit_recommendation_with_cleaned_data
 import traceback
 from datetime import datetime
@@ -202,15 +203,43 @@ def get_search_history():
     """Get user's search history with optional detailed results"""
     try:
         user_id = get_current_user_id()
-        limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': 'Authentication required',
+                'error_code': 'AUTH_MISSING'
+            }), 401
+            
+        # Validate and sanitize parameters
+        try:
+            limit = min(int(request.args.get('limit', 50)), 100)  # Cap at 100
+            offset = max(int(request.args.get('offset', 0)), 0)   # Ensure non-negative
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid pagination parameters',
+                'error_code': 'INVALID_PARAMS'
+            }), 400
+            
         include_details = request.args.get('include_details', 'false').lower() == 'true'
         
+        # Get search history with enhanced error handling
         history = db_service.get_user_search_history(user_id, limit, offset, include_details)
+        if history is None:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to retrieve search history due to database connection issues',
+                'error_code': 'DB_CONNECTION_ERROR'
+            }), 503
         
-        # Get total count for better pagination (exclude soft-deleted items)
-        total_count_response = db_service.service_client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).is_("deleted_at", "null").execute()
-        total_count = total_count_response.count or 0
+        # Get total count with timeout and retry
+        try:
+            total_count_response = db_service.service_client.table("user_search_history").select("id", count="exact").eq("user_id", user_id).is_("deleted_at", "null").execute()
+            total_count = total_count_response.count or 0
+        except Exception as count_error:
+            print(f"Warning: Could not get total count for user {user_id}: {count_error}")
+            # Fallback: estimate count based on returned results
+            total_count = len(history) if len(history) < limit else len(history) + 1
         
         return jsonify({
             'success': True,
@@ -223,11 +252,59 @@ def get_search_history():
             },
             'include_details': include_details
         })
-    except Exception as e:
-        print(f"Error getting search history: {str(e)}")
+    except jwt.ExpiredSignatureError:
+        print(f"Expired token for search history request")
         return jsonify({
             'success': False,
-            'error': f'Error getting search history: {str(e)}'
+            'error': 'Authentication token has expired. Please sign in again.',
+            'error_code': 'TOKEN_EXPIRED'
+        }), 401
+    except jwt.InvalidTokenError:
+        print(f"Invalid token for search history request")
+        return jsonify({
+            'success': False,
+            'error': 'Invalid authentication token. Please sign in again.',
+            'error_code': 'TOKEN_INVALID'
+        }), 401
+    except ConnectionError as conn_error:
+        print(f"Database connection error getting search history: {conn_error}")
+        return jsonify({
+            'success': False,
+            'error': 'Database connection temporarily unavailable. Please try again.',
+            'error_code': 'DB_CONNECTION_ERROR'
+        }), 503
+    except TimeoutError:
+        print(f"Timeout getting search history for user {user_id}")
+        return jsonify({
+            'success': False,
+            'error': 'Request timed out. Please try again.',
+            'error_code': 'TIMEOUT'
+        }), 504
+    except Exception as e:
+        # Enhanced error logging with more context
+        error_type = type(e).__name__
+        error_msg = str(e)
+        print(f"Unexpected error getting search history for user {user_id}: {error_type} - {error_msg}")
+        
+        # Try to provide more specific error messages based on common issues
+        if 'postgrest' in error_msg.lower():
+            error_response = 'Database query failed. Please try again.'
+            error_code = 'DB_QUERY_ERROR'
+        elif 'timeout' in error_msg.lower():
+            error_response = 'Request timed out. Please try again.'
+            error_code = 'TIMEOUT'
+        elif 'connection' in error_msg.lower():
+            error_response = 'Database connection issue. Please try again.'
+            error_code = 'DB_CONNECTION_ERROR'
+        else:
+            error_response = 'An unexpected error occurred. Please try again.'
+            error_code = 'INTERNAL_ERROR'
+        
+        return jsonify({
+            'success': False,
+            'error': error_response,
+            'error_code': error_code,
+            'error_type': error_type
         }), 500
 
 @app.route('/api/history/<history_id>', methods=['DELETE'])

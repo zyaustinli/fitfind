@@ -571,7 +571,7 @@ class DatabaseService:
             logger.error(f"Error cleaning up search history: {e}")
             return False
 
-    def get_user_search_history(self, user_id: str, limit: int = 50, offset: int = 0, include_details: bool = False) -> List[Dict]:
+    def get_user_search_history(self, user_id: str, limit: int = 50, offset: int = 0, include_details: bool = False):
         """Get user's search history with session details and optionally full results"""
         try:
             # Enforce reasonable limits
@@ -606,9 +606,22 @@ class DatabaseService:
                            .execute())
             
             return response.data or []
+        except ConnectionError as conn_error:
+            logger.error(f"Database connection error getting user search history for {user_id}: {conn_error}")
+            return None  # Signal connection issue to caller
+        except TimeoutError:
+            logger.error(f"Timeout getting user search history for {user_id}")
+            return None  # Signal timeout to caller
         except Exception as e:
-            logger.error(f"Error getting user search history: {e}")
-            return []
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"Error getting user search history for {user_id}: {error_type} - {error_msg}")
+            
+            # Check if this looks like a connection-related error
+            if any(keyword in error_msg.lower() for keyword in ['connection', 'timeout', 'network', 'postgrest']):
+                return None  # Signal connection issue
+            else:
+                return []  # Return empty list for other errors
     
     def soft_delete_search_history_item(self, user_id: str, history_id: str) -> bool:
         """Soft delete a search history item (hide from user's view)"""
