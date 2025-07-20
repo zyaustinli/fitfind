@@ -1,14 +1,6 @@
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
-
-export interface UserProfile {
-  id: string;
-  email: string;
-  full_name?: string;
-  avatar_url?: string;
-  created_at: string;
-  updated_at: string;
-}
+import { UserProfileResponse, UserProfile } from '@/types';
 
 export interface AuthState {
   user: User | null;
@@ -79,38 +71,43 @@ export async function resetPassword(email: string) {
   return { success: true };
 }
 
+
 export async function getCurrentSession(): Promise<Session | null> {
   const { data: { session } } = await supabase.auth.getSession();
   return session;
 }
 
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
+export async function getUserProfile(): Promise<UserProfile | null> {
+    const { data: { session } } = await supabase.auth.getSession();
 
-  if (error) {
-    console.error('Error fetching user profile:', error);
-    return null;
-  }
+    if (!session) {
+        return null;
+    }
 
-  return data;
+    try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/profile`, {
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch user profile');
+        }
+
+        const data: UserProfileResponse = await response.json();
+
+        if (data.success && data.profile) {
+            return data.profile;
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        return null;
+    }
 }
 
-export async function createUserProfile(userId: string, data: Partial<UserProfile>) {
-  const { error } = await supabase
-    .from('profiles')
-    .insert([{ id: userId, ...data }]);
-
-  if (error) {
-    console.error('Error creating user profile:', error);
-    return { success: false, error: error.message };
-  }
-
-  return { success: true };
-}
 
 export function onAuthStateChange(callback: (event: string, session: Session | null) => void) {
   return supabase.auth.onAuthStateChange(callback);
