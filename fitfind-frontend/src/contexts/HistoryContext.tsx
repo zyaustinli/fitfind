@@ -193,7 +193,7 @@ export function useHistoryEvents(
     
     const cleanup = addEventListener(filteredListener);
     return cleanup;
-  }, [addEventListener, listener, ...deps]);
+  }, [addEventListener, ...deps]); // Remove listener from dependencies to prevent recreation
 }
 
 // Hook for cross-component deletion state

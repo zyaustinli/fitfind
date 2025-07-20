@@ -17,6 +17,7 @@ import {
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStableFetch } from './useStableFetch';
+import { usePathname } from 'next/navigation';
 
 export interface UseWishlistOptions {
   autoFetch?: boolean;
@@ -92,11 +93,14 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   const mountedRef = useRef(true);
   const fetchingRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // Reset fetching flag
+      fetchingRef.current = false;
     };
   }, []);
 
@@ -105,8 +109,13 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   }, []);
 
   const fetchWishlistImpl = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (!user || fetchingRef.current) {
-      console.log('Skipping wishlist fetch: no user or already fetching');
+    if (!user) {
+      console.log('Skipping wishlist fetch: no user');
+      return;
+    }
+    
+    if (fetchingRef.current) {
+      console.log('Skipping wishlist fetch: already fetching');
       return;
     }
 
@@ -171,9 +180,10 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
         setInitialLoadStatus('error');
       }
     } finally {
+      // Always reset fetching flag
+      fetchingRef.current = false;
       if (mountedRef.current) {
         setLoading({ isLoading: false });
-        fetchingRef.current = false;
       }
     }
   }, [user?.id, pagination.limit]); // Only depend on user.id, not the whole user object
@@ -484,7 +494,16 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   // Reset initialization flag when user changes
   useEffect(() => {
     hasInitializedRef.current = false;
+    fetchingRef.current = false;
   }, [user?.id]);
+
+  // Clear state when navigating away from wishlist/collections pages
+  useEffect(() => {
+    if (!pathname.startsWith('/wishlist') && !pathname.startsWith('/collections')) {
+      console.log('🧹 Navigated away from wishlist/collections, cleaning up state');
+      fetchingRef.current = false;
+    }
+  }, [pathname]);
 
   // Re-fetch when sort filters change (for server-side sorting)
   useEffect(() => {

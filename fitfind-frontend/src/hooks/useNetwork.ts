@@ -204,6 +204,7 @@ export function useNetwork(options: UseNetworkOptions = {}) {
   // Clear queue
   const clearQueue = useCallback(() => {
     setQueuedOperations([]);
+    setIsProcessingQueue(false);
   }, []);
 
   // Remove specific operation from queue
@@ -243,10 +244,12 @@ export function useNetwork(options: UseNetworkOptions = {}) {
       
       if (connectionTestRef.current) {
         connectionTestRef.current.abort();
+        connectionTestRef.current = null;
       }
       
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
   }, [testConnectionSpeed]);
@@ -263,6 +266,7 @@ export function useNetwork(options: UseNetworkOptions = {}) {
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
   }, [networkState.isOnline, queuedOperations.length, processQueue]);

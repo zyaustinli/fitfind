@@ -15,6 +15,7 @@ import { useHistoryContext } from '@/contexts/HistoryContext';
 import { useStableFetch } from './useStableFetch';
 import { useNetwork } from './useNetwork';
 import { useToast, useDeleteToast } from '@/components/ui/toast';
+import { usePathname } from 'next/navigation';
 
 export interface UseSearchHistoryOptions {
   autoFetch?: boolean;
@@ -119,6 +120,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const fetchingRef = useRef(false);
   const hasInitializedRef = useRef(false);
   const undoTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const pathname = usePathname();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -127,6 +129,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       // Clear all undo timeouts
       undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       undoTimeoutsRef.current.clear();
+      // Reset fetching flag
+      fetchingRef.current = false;
     };
   }, []);
 
@@ -136,8 +140,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
   // Enhanced fetch with network retry logic
   const fetchHistoryImpl = useCallback(async (options: { reset?: boolean; includeDetails?: boolean } = {}) => {
-    if (!user || fetchingRef.current) {
-      console.log('Skipping fetch: no user or already fetching');
+    if (!user) {
+      console.log('Skipping fetch: no user');
+      return;
+    }
+    
+    if (fetchingRef.current) {
+      console.log('Skipping fetch: already fetching');
       return;
     }
 
@@ -193,10 +202,12 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         code: undefined
       });
     }
+    
+    // Reset fetching flag even if component unmounted
+    fetchingRef.current = false;
 
     if (mountedRef.current) {
       setLoading({ isLoading: false });
-      fetchingRef.current = false;
     }
   }, [user?.id, pagination.limit, pagination.offset, executeWithRetry, historyContext]);
 
@@ -635,8 +646,18 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   // Reset initialization flag when user changes
   useEffect(() => {
     hasInitializedRef.current = false;
+    fetchingRef.current = false;
     clearAllPendingOperations();
   }, [user?.id, clearAllPendingOperations]);
+
+  // Clear state when navigating away from history pages
+  useEffect(() => {
+    if (!pathname.startsWith('/history')) {
+      console.log('🧹 Navigated away from history, cleaning up state');
+      fetchingRef.current = false;
+      clearAllPendingOperations();
+    }
+  }, [pathname, clearAllPendingOperations]);
 
   return {
     // Data
