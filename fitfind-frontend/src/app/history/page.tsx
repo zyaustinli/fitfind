@@ -319,7 +319,7 @@ export default function HistoryPage() {
   if (authLoading || (historyLoading.isLoading && history.length === 0)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-muted/30 to-primary/5">
-        <div className="h-full flex items-center justify-center">
+        <div className="flex justify-center pt-32">
           <div className="text-center">
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-muted-foreground">Loading...</p>

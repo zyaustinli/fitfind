@@ -103,7 +103,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       if (response.success) {
         console.log('📁 Collections: Fetched', response.collections.length, 'collections');
         setCollections(response.collections);
-        setHasFetchedForUser(user.id);
+        // ✅ Don't set hasFetchedForUser here - let useEffect handle it after state updates
       } else {
         throw new Error(response.error || 'Failed to fetch collections');
       }
@@ -120,14 +120,28 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user, clearError]);
 
-  // Single effect for data fetching - simplified and stable
+  // Effect to track when we've successfully fetched data for a user
+  // This runs AFTER collections state has been updated, preventing race conditions
+  useEffect(() => {
+    if (user && collections.length >= 0 && !loading.isLoading && !error.hasError) {
+      // Only set if we haven't marked this user as fetched yet
+      if (hasFetchedForUser !== user.id) {
+        console.log('📁 Collections: Marking user as fetched after successful data load:', user.email);
+        setHasFetchedForUser(user.id);
+      }
+    }
+  }, [user, collections, loading.isLoading, error.hasError, hasFetchedForUser]);
+
+  // Single effect for data fetching - simplified and stable  
   useEffect(() => {
     console.log('📁 Collections: Main effect check', {
       authLoading,
       hasUser: !!user,
       userId: user?.id,
       hasFetchedForUser,
-      autoFetch
+      autoFetch,
+      collectionsCount: collections.length,
+      isLoading: loading.isLoading
     });
 
     // Skip if auth is still loading
@@ -148,13 +162,11 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
 
     // Fetch if we haven't fetched for this user yet and autoFetch is enabled
-    if (autoFetch && user.id !== hasFetchedForUser) {
+    if (autoFetch && user.id !== hasFetchedForUser && !loading.isLoading) {
       console.log('📁 Collections: Need to fetch for new user');
-      // Set loading immediately to prevent empty state flash
-      setLoading({ isLoading: true, message: 'Loading collections...' });
       fetchCollections();
     }
-  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, fetchCollections]);
+  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, loading.isLoading, fetchCollections]);
 
   // Collection CRUD operations
   const createNewCollection = useCallback(async (
@@ -431,8 +443,9 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   );
 
   const hasCollections = collections.length > 0;
-  // Only show empty when we've actually fetched data
-  const isEmpty = collections.length === 0 && !loading.isLoading && hasFetchedForUser === user?.id;
+  // ✅ Improved isEmpty logic: only show empty when we have a user, we're not loading, 
+  // there's no error, and we have actually attempted to fetch (either success or error occurred)
+  const isEmpty = user && collections.length === 0 && !loading.isLoading && !error.hasError && hasFetchedForUser === user.id;
   const totalCollections = collections.length;
 
   return {

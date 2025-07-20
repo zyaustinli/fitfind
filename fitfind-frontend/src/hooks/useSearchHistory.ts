@@ -170,7 +170,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       
       setHistory(prev => reset ? response.history : [...prev, ...response.history]);
       setPagination(response.pagination);
-      setHasFetchedForUser(user.id);
+      // ✅ Don't set hasFetchedForUser here - let useEffect handle it after state updates
       
       // Notify global context
       if (reset) {
@@ -188,6 +188,18 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     setLoading({ isLoading: false });
   }, [user, isFetching, pagination.limit, pagination.offset, includeDetails, executeWithRetry, historyContext, clearError]);
 
+  // Effect to track when we've successfully fetched data for a user
+  // This runs AFTER history state has been updated, preventing race conditions
+  useEffect(() => {
+    if (user && history.length >= 0 && !loading.isLoading && !error.hasError) {
+      // Only set if we haven't marked this user as fetched yet
+      if (hasFetchedForUser !== user.id) {
+        console.log('📚 History: Marking user as fetched after successful data load:', user.email);
+        setHasFetchedForUser(user.id);
+      }
+    }
+  }, [user, history, loading.isLoading, error.hasError, hasFetchedForUser]);
+
   // Single effect for data fetching - simplified and stable
   useEffect(() => {
     console.log('📚 History: Main effect check', {
@@ -195,7 +207,10 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       hasUser: !!user,
       userId: user?.id,
       hasFetchedForUser,
-      autoFetch
+      autoFetch,
+      historyCount: history.length,
+      isLoading: loading.isLoading,
+      isFetching
     });
 
     // Skip if auth is still loading
@@ -221,13 +236,11 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     }
 
     // Fetch if we haven't fetched for this user yet and autoFetch is enabled
-    if (autoFetch && user.id !== hasFetchedForUser && !isFetching) {
+    if (autoFetch && user.id !== hasFetchedForUser && !isFetching && !loading.isLoading) {
       console.log('📚 History: Need to fetch for new user');
-      // Set loading immediately to prevent empty state flash
-      setLoading({ isLoading: true, message: 'Loading search history...' });
       fetchHistory({ reset: true });
     }
-  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, isFetching, fetchHistory, historyContext, clearQueue]);
+  }, [user?.id, authLoading, autoFetch, hasFetchedForUser, isFetching, loading.isLoading, fetchHistory]);
 
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
@@ -622,8 +635,9 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   }, [history, filters]);
 
   const hasMore = pagination.has_more;
-  // Only show empty when we've actually fetched data
-  const isEmpty = history.length === 0 && !loading.isLoading && hasFetchedForUser === user?.id;
+  // ✅ Improved isEmpty logic: only show empty when we have a user, we're not loading, 
+  // there's no error, and we have actually attempted to fetch (either success or error occurred)
+  const isEmpty = user && history.length === 0 && !loading.isLoading && !error.hasError && hasFetchedForUser === user.id;
   const totalCount = pagination.total_count || 0;
 
   return {

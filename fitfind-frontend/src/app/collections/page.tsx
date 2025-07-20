@@ -45,7 +45,7 @@ export default function CollectionsPage() {
   if (authLoading || (loading.isLoading && collections.length === 0)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-        <div className="flex h-screen items-center justify-center">
+        <div className="flex justify-center pt-32">
           <div className="relative">
             <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
             <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-purple-600 rounded-full animate-spin animate-reverse"></div>
