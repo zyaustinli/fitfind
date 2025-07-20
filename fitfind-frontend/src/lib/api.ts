@@ -14,6 +14,7 @@ import {
   CollectionUpdateRequest,
   AddItemToCollectionRequest
 } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 // API Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -74,11 +75,20 @@ class ApiCache {
 const apiCache = new ApiCache();
 
 // Helper function to get auth headers
-const getAuthHeaders = () => {
+const getAuthHeaders = async () => {
   if (typeof window === 'undefined') return {};
   
-  const token = localStorage.getItem('supabase.auth.token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn('Error getting Supabase session for API headers:', error);
+      return {};
+    }
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  } catch (error) {
+    console.warn('Failed to get Supabase session for API headers:', error);
+    return {};
+  }
 };
 
 // Generic API fetch wrapper with caching
@@ -106,7 +116,7 @@ async function apiRequest<T>(
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(),
+      ...(await getAuthHeaders()),
       ...options.headers,
     },
   });
@@ -151,7 +161,7 @@ export async function uploadOutfitImage(
   const response = await fetch(`${API_BASE_URL}/api/upload`, {
     method: 'POST',
     headers: {
-      ...getAuthHeaders(),
+      ...(await getAuthHeaders()),
     },
     body: formData,
   });
