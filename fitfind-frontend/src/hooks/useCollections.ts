@@ -132,29 +132,43 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         setLoading({ isLoading: false });
       }
     }
-  }, [user, clearError]);
+  }, [user?.id]); // 🔧 FIX: Stabilize dependencies - only depend on user ID
 
-  // Auto-fetch collections when user is authenticated
+  // 🔧 CONSOLIDATED initialization effect - following proven useWishlist pattern
   useEffect(() => {
-    console.log('📁 Collections hook: checking initialization', {
+    if (!autoFetch) return;
+    
+    console.log('📁 Collections: Consolidated initialization check', {
       authLoading,
       hasUser: !!user,
       userEmail: user?.email,
-      autoFetch,
       hasInitialized: hasInitializedRef.current
     });
     
-    if (!authLoading && user && autoFetch && !hasInitializedRef.current) {
-      console.log('📁 Collections hook: initializing for user:', user.email);
+    // Skip if auth is still loading
+    if (authLoading) {
+      console.log('📁 Collections: Auth still loading, skipping');
+      return;
+    }
+
+    // Clear data when no user
+    if (!user) {
+      console.log('📁 Collections: No user, clearing data');
+      setCollections([]);
+      setCurrentCollection(null);
+      setCollectionItems([]);
+      setCollectionPagination(null);
+      hasInitializedRef.current = false;
+      return;
+    }
+
+    // Only fetch if we haven't initialized for this user
+    if (!hasInitializedRef.current) {
+      console.log('📁 Collections: Initializing for user:', user.email);
       hasInitializedRef.current = true;
       fetchCollections();
-    } else if (!user) {
-      // Clear data when no user
-      console.log('📁 Collections hook: clearing data - no user');
-      setCollections([]);
-      hasInitializedRef.current = false;
     }
-  }, [authLoading, user?.id, autoFetch, fetchCollections]);
+  }, [user?.id, authLoading, autoFetch, fetchCollections]);
 
   const createNewCollection = useCallback(async (
     name: string,
@@ -436,22 +450,20 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user, removeFromCollection, addToCollection]);
 
-  // Reset initialization flag when user changes (simple, reliable pattern like useWishlist)
+  // 🔧 SIMPLIFIED user change reset - following useWishlist pattern (ONLY reset flag, don't clear data)
   useEffect(() => {
-    console.log('🔄 Collections: User changed, resetting initialization');
+    console.log('🔄 Collections: User changed, resetting initialization flag only');
     hasInitializedRef.current = false;
-    setCollections([]);
-    setCurrentCollection(null);
-    setCollectionItems([]);
-    setCollectionPagination(null);
+    // 🚨 CRITICAL: Don't clear data here - let main effect handle it
   }, [user?.id]);
 
-  // Clear state when navigating away from collections pages - CRITICAL FIX: also reset hasInitializedRef
+  // 🔧 SIMPLIFIED navigation cleanup - keep data in memory like useWishlist
   useEffect(() => {
     if (!pathname.startsWith('/collections')) {
-      console.log('🧹 Collections: Navigated away, cleaning up state AND resetting initialization');
-      hasInitializedRef.current = false; // 🔑 KEY FIX: Reset initialization flag to force refetch on return
+      console.log('🧹 Collections: Navigated away, light cleanup (keeping data in memory)');
+      // Only clear loading state, keep data for fast return visits
       setLoading({ isLoading: false });
+      // 🚨 Don't reset hasInitializedRef - keep data loaded for same user
     }
   }, [pathname]);
 

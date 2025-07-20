@@ -619,17 +619,26 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const isEmpty = history.length === 0 && !loading.isLoading;
   const totalCount = pagination.total_count || 0;
 
-  // Initial fetch effect
+  // 🔧 CONSOLIDATED initialization effect - following proven useWishlist pattern  
   useEffect(() => {
     if (!autoFetch) return;
     
+    console.log('📚 Search History: Consolidated initialization check', {
+      authLoading,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasInitialized: hasInitializedRef.current
+    });
+    
+    // Skip if auth is still loading
     if (authLoading) {
-      console.log('Auth still loading, skipping fetch');
+      console.log('📚 Search History: Auth still loading, skipping');
       return;
     }
 
+    // Clear data when no user
     if (!user) {
-      console.log('No user, clearing data');
+      console.log('📚 Search History: No user, clearing data');
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
       hasInitializedRef.current = false;
@@ -637,30 +646,31 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       return;
     }
 
+    // Only fetch if we haven't initialized for this user
     if (!hasInitializedRef.current) {
-      console.log('Initial fetch for user:', user.id);
+      console.log('📚 Search History: Initializing for user:', user.id);
       hasInitializedRef.current = true;
       fetchHistory({ reset: true, includeDetails, offset: 0 });
     }
   }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails, clearAllPendingOperations]);
 
-  // Reset initialization flag when user changes (simple, reliable pattern like useWishlist)
+  // 🔧 SIMPLIFIED user change reset - following useWishlist pattern (ONLY reset flag)
   useEffect(() => {
-    console.log('🔄 Search History: User changed, resetting initialization');
+    console.log('🔄 Search History: User changed, resetting initialization flag only');
     hasInitializedRef.current = false;
     fetchingRef.current = false;
-    clearAllPendingOperations();
-  }, [user?.id, clearAllPendingOperations]);
+    // 🚨 CRITICAL: Don't clear data here - let main effect handle it
+  }, [user?.id]);
 
-  // Clear state when navigating away from history pages - CRITICAL FIX: also reset hasInitializedRef
+  // 🔧 SIMPLIFIED navigation cleanup - keep data in memory like useWishlist
   useEffect(() => {
     if (!pathname.startsWith('/history')) {
-      console.log('🧹 Search History: Navigated away, cleaning up state AND resetting initialization');
-      hasInitializedRef.current = false; // 🔑 KEY FIX: Reset initialization flag to force refetch on return
+      console.log('🧹 Search History: Navigated away, light cleanup (keeping data in memory)');
       fetchingRef.current = false;
-      clearAllPendingOperations();
+      // Only clear loading/operation states, keep data for fast return visits
+      // 🚨 Don't reset hasInitializedRef - keep data loaded for same user
     }
-  }, [pathname, clearAllPendingOperations]);
+  }, [pathname]);
 
   return {
     // Data
