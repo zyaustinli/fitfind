@@ -38,6 +38,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   });
 
   const mountedRef = useRef(true);
+  const initializingRef = useRef(false);
 
   const setAuthState = useCallback((newState: Partial<AuthState>) => {
     if (mountedRef.current) {
@@ -46,6 +47,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const initializeAuth = useCallback(async () => {
+    if (initializingRef.current) return;
+    initializingRef.current = true;
+    
     try {
       const session = await getCurrentSession();
       if (session?.user) {
@@ -72,6 +76,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         session: null,
         loading: false
       });
+    } finally {
+      initializingRef.current = false;
     }
   }, [setAuthState]);
   

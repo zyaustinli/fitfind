@@ -93,17 +93,23 @@ export default function HistoryPage() {
     }
   });
 
-  // Debug logging for history page auth state
+  // Enhanced debug logging for history page state
   useEffect(() => {
-    console.log('📚 History page auth state:', {
+    console.log('📚 History page state update:', {
       hasUser: !!user,
       userEmail: user?.email,
       authLoading,
+      historyLoading: historyLoading.isLoading,
+      historyCount: history.length,
+      filteredCount: filteredHistory.length,
+      isEmpty,
+      hasError: historyError.hasError,
+      errorMessage: historyError.message,
       isOnline,
       queuedOperations: queuedOperationsCount,
       timestamp: new Date().toISOString()
     });
-  }, [user, authLoading, isOnline, queuedOperationsCount]);
+  }, [user, authLoading, historyLoading.isLoading, history.length, filteredHistory.length, isEmpty, historyError.hasError, historyError.message, isOnline, queuedOperationsCount]);
 
   // Check wishlist status for all products in history
   useEffect(() => {

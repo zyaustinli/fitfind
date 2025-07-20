@@ -194,16 +194,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     }
   }, [user, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError]);
 
-  // Single useEffect for all data management
+  // Separate effect for handling auth state changes
   useEffect(() => {
-    console.log('📚 History: Effect running', {
+    console.log('📚 History: Auth state changed', {
       authLoading,
       hasUser: !!user,
       userId: user?.id,
-      lastUserId: lastUserIdRef.current,
-      autoFetch,
-      isInitialized: isInitializedRef.current,
-      historyCount: history.length
+      lastUserId: lastUserIdRef.current
     });
 
     // If auth is still loading, wait
@@ -229,33 +226,38 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       return;
     }
 
+    // Only process user changes if not currently loading auth and user is stable
+    const currentUserId = user.id;
+    const lastUserId = lastUserIdRef.current;
+
     // If user changed, reset and fetch
-    if (user.id !== lastUserIdRef.current) {
-      console.log('📚 History: User changed, resetting');
-      lastUserIdRef.current = user.id;
+    if (currentUserId && currentUserId !== lastUserId) {
+      console.log('📚 History: User changed, resetting', { from: lastUserId, to: currentUserId });
+      lastUserIdRef.current = currentUserId;
       isInitializedRef.current = false;
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
       setError({ hasError: false });
       
+      // Defer the fetch slightly to ensure state is stable
       if (autoFetch) {
-        fetchHistory({ reset: true });
+        const timeoutId = setTimeout(() => {
+          if (mountedRef.current && !isFetchingRef.current) {
+            fetchHistory({ reset: true });
+          }
+        }, 50);
+        
+        return () => clearTimeout(timeoutId);
       }
       return;
     }
 
     // If same user but not initialized and autoFetch enabled, fetch
-    if (user.id === lastUserIdRef.current && !isInitializedRef.current && autoFetch) {
+    if (currentUserId === lastUserId && !isInitializedRef.current && autoFetch && !isFetchingRef.current) {
       console.log('📚 History: Same user, not initialized, fetching');
       fetchHistory({ reset: true });
     }
-
-    // Cleanup function
-    return () => {
-      // Don't clear data on unmount, just stop any ongoing operations
-      isFetchingRef.current = false;
-    };
-  }, [user?.id, authLoading, autoFetch, fetchHistory, historyContext, clearQueue]);
+  }, [authLoading, user?.id, autoFetch, fetchHistory, historyContext, clearQueue]);
 
   // Mount/unmount tracking
   useEffect(() => {

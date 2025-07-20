@@ -134,16 +134,13 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     }
   }, [user, clearError]);
 
-  // Single useEffect for all data management
+  // Separate effect for handling auth state changes
   useEffect(() => {
-    console.log('📁 Collections: Effect running', {
+    console.log('📁 Collections: Auth state changed', {
       authLoading,
       hasUser: !!user,
       userId: user?.id,
-      lastUserId: lastUserIdRef.current,
-      autoFetch,
-      isInitialized: isInitializedRef.current,
-      collectionsCount: collections.length
+      lastUserId: lastUserIdRef.current
     });
 
     // If auth is still loading, wait
@@ -164,10 +161,14 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       return;
     }
 
+    // Only process user changes if not currently loading auth and user is stable
+    const currentUserId = user.id;
+    const lastUserId = lastUserIdRef.current;
+
     // If user changed, reset and fetch
-    if (user.id !== lastUserIdRef.current) {
-      console.log('📁 Collections: User changed, resetting');
-      lastUserIdRef.current = user.id;
+    if (currentUserId && currentUserId !== lastUserId) {
+      console.log('📁 Collections: User changed, resetting', { from: lastUserId, to: currentUserId });
+      lastUserIdRef.current = currentUserId;
       isInitializedRef.current = false;
       setCollections([]);
       setCurrentCollection(null);
@@ -175,24 +176,25 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       setCollectionPagination(null);
       setError({ hasError: false });
       
+      // Defer the fetch slightly to ensure state is stable
       if (autoFetch) {
-        fetchCollections();
+        const timeoutId = setTimeout(() => {
+          if (mountedRef.current && !isFetchingRef.current) {
+            fetchCollections();
+          }
+        }, 50);
+        
+        return () => clearTimeout(timeoutId);
       }
       return;
     }
 
     // If same user but not initialized and autoFetch enabled, fetch
-    if (user.id === lastUserIdRef.current && !isInitializedRef.current && autoFetch) {
+    if (currentUserId === lastUserId && !isInitializedRef.current && autoFetch && !isFetchingRef.current) {
       console.log('📁 Collections: Same user, not initialized, fetching');
       fetchCollections();
     }
-
-    // Cleanup function
-    return () => {
-      // Don't clear data on unmount, just stop any ongoing operations
-      isFetchingRef.current = false;
-    };
-  }, [user?.id, authLoading, autoFetch, fetchCollections]);
+  }, [authLoading, user?.id, autoFetch, fetchCollections]);
 
   // Mount/unmount tracking
   useEffect(() => {
