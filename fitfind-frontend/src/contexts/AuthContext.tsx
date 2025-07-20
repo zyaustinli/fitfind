@@ -7,6 +7,7 @@ import {
   getCurrentSession, 
   getUserProfile,
   createUserProfile,
+  updateUserProfile,
   type AuthState, 
   type UserProfile,
   type SignUpData,
@@ -81,37 +82,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async function initializeAuth() {
       try {
         const session = await getCurrentSession();
-        
-        if (!mountedRef.current) return;
-
-        if (session?.user) {
-          let profile = await getUserProfile(session.user.id);
-          
-          if (!profile && session.user.email) {
-            const result = await createUserProfile(session.user);
-            if (result.success) {
-              profile = result.profile || null;
-            }
+        if (mountedRef.current) {
+          if (session?.user) {
+            // The backend will handle profile creation if it doesn't exist.
+            const profile = await getUserProfile(session.user.id);
+            lastUserIdRef.current = session.user.id;
+            setAuthState({
+              user: session.user,
+              profile,
+              session,
+              loading: false
+            });
+          } else {
+            lastUserIdRef.current = null;
+            setAuthState({
+              user: null,
+              profile: null,
+              session: null,
+              loading: false
+            });
           }
-
-          lastUserIdRef.current = session.user.id;
-          setAuthState({
-            user: session.user,
-            profile,
-            session,
-            loading: false
-          });
-        } else {
-          lastUserIdRef.current = null;
-          setAuthState({
-            user: null,
-            profile: null,
-            session: null,
-            loading: false
-          });
         }
       } catch (error) {
-        console.error('❌ Error initializing auth:', error);
+        console.error('Error initializing auth:', error); // Enhanced logging
         if (mountedRef.current) {
           setAuthState({
             user: null,
@@ -151,9 +144,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
             let profile = await getUserProfile(session.user.id);
             
             if (!profile && session.user.email) {
-              const result = await createUserProfile(session.user);
+              const profileData = {
+                email: session.user.email,
+                full_name: session.user.user_metadata?.full_name || '',
+                avatar_url: session.user.user_metadata?.avatar_url || ''
+              };
+              const result = await createUserProfile(session.user.id, profileData);
               if (result.success) {
-                profile = result.profile || null;
+                profile = await getUserProfile(session.user.id);
               }
             }
 
@@ -205,13 +203,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const result = await authSignUp(data)
       
-      if (result.success && result.user) {
-        console.log('Signup successful, user created:', result.user.email)
+      if (result.success && result.data?.user) {
+        console.log('Signup successful, user created:', result.data.user.email)
         
         // For confirmed users (no email verification needed), immediately try to create profile
-        if (result.user.email_confirmed_at) {
+        if (result.data.user.email_confirmed_at) {
           console.log('User email confirmed, creating profile immediately...')
-          const profileResult = await createUserProfile(result.user)
+          const profileData = {
+            email: result.data.user.email,
+            full_name: result.data.user.user_metadata?.full_name || '',
+            avatar_url: result.data.user.user_metadata?.avatar_url || ''
+          };
+          const profileResult = await createUserProfile(result.data.user.id, profileData)
           if (profileResult.success) {
             console.log('Profile created immediately after signup')
           }
@@ -295,7 +298,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     try {
-      const { updateUserProfile } = await import('@/lib/auth')
       const result = await updateUserProfile(state.user.id, updates)
       
       if (result.success && result.profile) {
