@@ -108,7 +108,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     setError({ hasError: false });
   }, []);
 
-  const fetchWishlistImpl = useCallback(async (options: { reset?: boolean } = {}) => {
+  const fetchWishlistImpl = useCallback(async (options: { reset?: boolean; offset?: number } = {}) => {
     if (!user) {
       console.log('Skipping wishlist fetch: no user');
       return;
@@ -119,8 +119,8 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
       return;
     }
 
-    const { reset = false } = options;
-    const currentOffset = reset ? 0 : pagination.offset;
+    const { reset = false, offset } = options;
+    const currentOffset = offset !== undefined ? offset : (reset ? 0 : pagination.offset);
     
     // Set initial load status to loading for fresh loads
     if (reset) {
@@ -194,17 +194,18 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
     
+    const newOffset = pagination.offset + pagination.limit;
     setPagination(prev => ({
       ...prev,
-      offset: prev.offset + prev.limit
+      offset: newOffset
     }));
     
-    await fetchWishlist({ reset: false });
-  }, [loading.isLoading, pagination.has_more, fetchWishlist]);
+    await fetchWishlist({ reset: false, offset: newOffset });
+  }, [loading.isLoading, pagination.has_more, pagination.offset, pagination.limit, fetchWishlist]);
 
   const refresh = useCallback(async () => {
     setPagination(prev => ({ ...prev, offset: 0 }));
-    await fetchWishlist({ reset: true });
+    await fetchWishlist({ reset: true, offset: 0 });
   }, [fetchWishlist]);
 
   const addItem = useCallback(async (
@@ -487,7 +488,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     if (!hasInitializedRef.current) {
       console.log('Initial wishlist fetch for user:', user.id);
       hasInitializedRef.current = true;
-      fetchWishlist({ reset: true });
+      fetchWishlist({ reset: true, offset: 0 });
     }
   }, [user?.id, authLoading, autoFetch, fetchWishlist]);
 
@@ -510,7 +511,7 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
     if (user && hasInitializedRef.current && (filters.sortBy === 'newest' || filters.sortBy === 'oldest')) {
       // These might require server-side sorting, so refetch
       console.log('Sort filter changed, refetching wishlist');
-      fetchWishlist({ reset: true });
+      fetchWishlist({ reset: true, offset: 0 });
     }
   }, [filters.sortBy, user?.id, fetchWishlist]);
 

@@ -138,8 +138,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     setError({ hasError: false });
   }, []);
 
-  // Enhanced fetch with network retry logic
-  const fetchHistoryImpl = useCallback(async (options: { reset?: boolean; includeDetails?: boolean } = {}) => {
+  // Enhanced fetch with network retry logic  
+  const fetchHistoryImpl = useCallback(async (options: { reset?: boolean; includeDetails?: boolean; offset?: number } = {}) => {
     if (!user) {
       console.log('Skipping fetch: no user');
       return;
@@ -150,8 +150,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       return;
     }
 
-    const { reset = false, includeDetails = false } = options;
-    const currentOffset = reset ? 0 : pagination.offset;
+    const { reset = false, includeDetails = false, offset } = options;
+    const currentOffset = offset !== undefined ? offset : (reset ? 0 : pagination.offset);
     
     fetchingRef.current = true;
     setLoading({
@@ -209,24 +209,25 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     if (mountedRef.current) {
       setLoading({ isLoading: false });
     }
-  }, [user?.id, pagination.limit, pagination.offset, executeWithRetry, historyContext]);
+  }, [user?.id, pagination.limit, executeWithRetry, historyContext]);
 
-  const fetchHistory = useStableFetch(fetchHistoryImpl, [user?.id, pagination.limit]);
+  const fetchHistory = useStableFetch(fetchHistoryImpl, [user?.id, pagination.limit, executeWithRetry, historyContext]);
 
   const loadMore = useCallback(async () => {
     if (loading.isLoading || !pagination.has_more) return;
     
+    const newOffset = pagination.offset + pagination.limit;
     setPagination(prev => ({
       ...prev,
-      offset: prev.offset + prev.limit
+      offset: newOffset
     }));
     
-    await fetchHistory({ reset: false, includeDetails });
-  }, [loading.isLoading, pagination.has_more, fetchHistory, includeDetails]);
+    await fetchHistory({ reset: false, includeDetails, offset: newOffset });
+  }, [loading.isLoading, pagination.has_more, pagination.offset, pagination.limit, fetchHistory, includeDetails]);
 
   const refresh = useCallback(async () => {
     setPagination(prev => ({ ...prev, offset: 0 }));
-    await fetchHistory({ reset: true, includeDetails });
+    await fetchHistory({ reset: true, includeDetails, offset: 0 });
   }, [fetchHistory, includeDetails]);
 
   const setFilters = useCallback((newFilters: Partial<SearchHistoryFilters>) => {
@@ -579,7 +580,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     undoTimeoutsRef.current.clear();
     historyContext.clearAllDeletingItems();
     clearQueue();
-  }, [historyContext, clearQueue]);
+  }, []); // Remove dependencies to make this stable - the refs/context should be stable
 
   // Client-side filtering and sorting
   const filteredHistory = useMemo(() => {
@@ -639,7 +640,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     if (!hasInitializedRef.current) {
       console.log('Initial fetch for user:', user.id);
       hasInitializedRef.current = true;
-      fetchHistory({ reset: true, includeDetails });
+      fetchHistory({ reset: true, includeDetails, offset: 0 });
     }
   }, [user?.id, authLoading, autoFetch, fetchHistory, includeDetails, clearAllPendingOperations]);
 

@@ -15,14 +15,20 @@ export function useStableFetch<T extends (...args: any[]) => any>(
 ): T {
   const fetchRef = useRef(fetchFn);
   const depsRef = useRef(deps);
+  const hasDepsChanged = useRef(false);
 
   // Update ref when deps change (using shallow comparison instead of JSON.stringify)
   if (!shallowEqual(depsRef.current, deps)) {
     fetchRef.current = fetchFn;
     depsRef.current = deps;
+    hasDepsChanged.current = true;
+  } else {
+    hasDepsChanged.current = false;
   }
 
+  // CRITICAL FIX: Include deps in useCallback so it recreates when dependencies change
+  // This prevents stale closure issues where the callback captures old dependency values
   return useCallback((...args: Parameters<T>) => {
     return fetchRef.current(...args);
-  }, []) as T;
+  }, deps) as T;
 } 
