@@ -130,6 +130,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const undoTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const abortControllerRef = useRef<AbortController | null>(null);
   const authChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mountTimeRef = useRef<number>(Date.now());
 
   const clearError = useCallback(() => {
     setError({ hasError: false });
@@ -185,10 +186,18 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       abortControllerRef.current.abort();
     }
 
-    // Check if already fetching - use atomic check and set
+    // Check if already fetching - but allow for fresh navigation
     if (isFetchingRef.current) {
-      console.log('🔄 Fetch already in progress, skipping duplicate request');
-      return;
+      const timeSinceMount = Date.now() - mountTimeRef.current;
+      const isRecentNavigation = timeSinceMount < 2000; // 2 seconds
+      
+      if (isRecentNavigation) {
+        console.log('🔄 Recent navigation detected, resetting fetch flag for legitimate request');
+        isFetchingRef.current = false;
+      } else {
+        console.log('🔄 Fetch already in progress, skipping duplicate request');
+        return;
+      }
     }
 
     const { reset = false, includeDetails: fetchDetails = includeDetails, offset } = options;
@@ -332,6 +341,8 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   // Mount/unmount tracking and comprehensive cleanup
   useEffect(() => {
     mountedRef.current = true;
+    mountTimeRef.current = Date.now(); // Track mount time for navigation detection
+    
     return () => {
       console.log('🧹 useSearchHistory cleanup: Component unmounting');
       mountedRef.current = false;
@@ -352,7 +363,7 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         abortControllerRef.current = null;
       }
       
-      // Reset fetch flag
+      // Reset fetch flag immediately to prevent navigation issues
       isFetchingRef.current = false;
     };
   }, []);

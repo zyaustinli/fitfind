@@ -89,6 +89,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   const mountedRef = useRef(true);
   const authChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const mountTimeRef = useRef<number>(Date.now());
 
   // Clear error helper
   const clearError = useCallback(() => {
@@ -106,10 +107,18 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       abortControllerRef.current.abort();
     }
 
-    // Check if already fetching - use atomic check and set
+    // Check if already fetching - but allow for fresh navigation
     if (isFetchingRef.current) {
-      console.log('🔄 Collections fetch already in progress, skipping duplicate request');
-      return;
+      const timeSinceMount = Date.now() - mountTimeRef.current;
+      const isRecentNavigation = timeSinceMount < 2000; // 2 seconds
+      
+      if (isRecentNavigation) {
+        console.log('🔄 Recent navigation detected, resetting fetch flag for legitimate request');
+        isFetchingRef.current = false;
+      } else {
+        console.log('🔄 Collections fetch already in progress, skipping duplicate request');
+        return;
+      }
     }
 
     // Create new abort controller for this fetch
@@ -232,6 +241,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   // Mount/unmount tracking and comprehensive cleanup
   useEffect(() => {
     mountedRef.current = true;
+    mountTimeRef.current = Date.now(); // Track mount time for navigation detection
+    
     return () => {
       console.log('🧹 useCollections cleanup: Component unmounting');
       mountedRef.current = false;
@@ -242,13 +253,13 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         authChangeTimeoutRef.current = null;
       }
       
-      // Cancel any ongoing requests
+      // Cancel any ongoing requests and reset flags immediately
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
       
-      // Reset fetch flag
+      // Reset fetch flag immediately to prevent navigation blocking
       isFetchingRef.current = false;
     };
   }, []);
