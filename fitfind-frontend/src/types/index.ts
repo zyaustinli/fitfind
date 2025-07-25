@@ -328,7 +328,8 @@ export interface LoadingState {
 export interface ErrorState {
   hasError: boolean;
   message?: string;
-  code?: number;
+  code?: string;
+  recoveryActions?: string[];
 }
 
 // Bulk Operations Types

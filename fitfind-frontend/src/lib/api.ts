@@ -95,6 +95,11 @@ async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // Check if request was aborted before starting
+  if (options.signal?.aborted) {
+    throw new Error('Request aborted');
+  }
+  
   // Get fresh auth headers
   const authHeaders = await getAuthHeaders();
   
@@ -257,7 +262,8 @@ export async function checkWishlistStatus(productIds: string[]): Promise<Wishlis
 export async function getSearchHistory(
     limit: number = 20, 
     offset: number = 0, 
-    includeDetails: boolean = false
+    includeDetails: boolean = false,
+    options?: { signal?: AbortSignal }
 ): Promise<SearchHistoryResponse> {
     const params = new URLSearchParams({
         limit: limit.toString(),
@@ -265,7 +271,9 @@ export async function getSearchHistory(
         include_details: String(includeDetails),
     });
 
-    return apiRequest<SearchHistoryResponse>(`/api/history?${params.toString()}`);
+    return apiRequest<SearchHistoryResponse>(`/api/history?${params.toString()}`, {
+        signal: options?.signal
+    });
 }
 
 export async function deleteSearchHistory(historyId: string): Promise<SearchHistoryDeleteResponse> {
@@ -277,8 +285,10 @@ export async function getSearchSessionDetails(sessionId: string): Promise<{ succ
 }
 
 // Collections API functions
-export async function getCollections(): Promise<CollectionsResponse> {
-  return apiRequest<CollectionsResponse>('/api/collections');
+export async function getCollections(options?: { signal?: AbortSignal }): Promise<CollectionsResponse> {
+  return apiRequest<CollectionsResponse>('/api/collections', {
+    signal: options?.signal
+  });
 }
 
 export async function getCollectionItems(collectionId: string, limit: number, offset: number): Promise<CollectionItemsResponse> {

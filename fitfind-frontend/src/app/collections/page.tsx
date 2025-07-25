@@ -8,6 +8,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CollectionCard, CreateCollectionModal } from "@/components/collections";
+import { PageErrorBoundary } from "@/components/error";
 
 type ModalState = 
   | { isOpen: false }
@@ -17,7 +18,7 @@ type CreateCollectionModalState =
   | { isOpen: false }
   | { isOpen: true }
 
-export default function CollectionsPage() {
+function CollectionsPageContent() {
   const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
   const [createModalState, setCreateModalState] = useState<CreateCollectionModalState>({ isOpen: false });
@@ -251,5 +252,13 @@ export default function CollectionsPage() {
         onCreateCollection={handleCreateCollection}
       />
     </div>
+  );
+}
+
+export default function CollectionsPage() {
+  return (
+    <PageErrorBoundary pageName="Collections">
+      <CollectionsPageContent />
+    </PageErrorBoundary>
   );
 }

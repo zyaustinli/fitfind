@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SearchHistoryCard, ConfirmDeleteDialog } from "@/components/history";
 import { ConfirmBulkDeleteDialog } from "@/components/history/ConfirmBulkDeleteDialog";
 import { SearchHistoryFilters } from "@/components/history/SearchHistoryFilters";
+import { PageErrorBoundary } from "@/components/error";
 import type { SearchHistoryItem } from "@/types";
 import { redoSearch } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -33,7 +34,7 @@ interface BulkDeleteState {
   loading: boolean;
 }
 
-export default function HistoryPage() {
+function HistoryPageContent() {
   const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const { toast } = useToast();
   const historyContext = useHistoryContext();
@@ -579,5 +580,13 @@ export default function HistoryPage() {
       />
 
     </>
+  );
+}
+
+export default function HistoryPage() {
+  return (
+    <PageErrorBoundary pageName="History">
+      <HistoryPageContent />
+    </PageErrorBoundary>
   );
 } 

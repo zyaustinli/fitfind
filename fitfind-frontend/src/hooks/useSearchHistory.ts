@@ -101,11 +101,20 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   });
   const [filters, setFiltersState] = useState<SearchHistoryFilters>(defaultFilters);
   
+  // Centralized loading state machine
+  const [loadingState, setLoadingState] = useState<{
+    type: 'idle' | 'fetching' | 'loading_more' | 'refreshing' | 'deleting' | 'bulk_deleting';
+    message?: string;
+    progress?: { current: number; total: number };
+  }>({ type: 'idle' });
+  
+  // Legacy loading state for backwards compatibility
+  const loading: LoadingState = {
+    isLoading: loadingState.type !== 'idle',
+    message: loadingState.message
+  };
+  
   // UI state
-  const [loading, setLoading] = useState<LoadingState>({
-    isLoading: false,
-    message: undefined
-  });
   const [error, setError] = useState<ErrorState>({
     hasError: false,
     message: undefined,
@@ -119,34 +128,96 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
   const undoTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const authChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearError = useCallback(() => {
     setError({ hasError: false });
   }, []);
 
+  // Enhanced error recovery mechanism
+  const handleErrorWithRecovery = useCallback((error: any, operation: string) => {
+    console.error(`🔴 useSearchHistory error in ${operation}:`, error);
+    
+    // Determine if this is a recoverable error
+    const isNetworkError = error.message?.includes('fetch') || 
+                          error.message?.includes('network') ||
+                          error.name === 'TypeError';
+    
+    const isAuthError = error.status === 401 || 
+                       error.status === 403 ||
+                       error.message?.includes('Authentication');
+    
+    const isServerError = error.status >= 500;
+    
+    let errorMessage = error.message || 'An unexpected error occurred';
+    let recoveryActions: string[] = [];
+    
+    if (isNetworkError) {
+      errorMessage = 'Network connection issue. Please check your internet connection.';
+      recoveryActions = ['retry', 'refresh'];
+    } else if (isAuthError) {
+      errorMessage = 'Authentication expired. Please sign in again.';
+      recoveryActions = ['reauth'];
+    } else if (isServerError) {
+      errorMessage = 'Server temporarily unavailable. Please try again in a moment.';
+      recoveryActions = ['retry', 'refresh'];
+    }
+    
+    setError({
+      hasError: true,
+      message: errorMessage,
+      code: error.status?.toString(),
+      recoveryActions
+    });
+    
+    return { isRecoverable: recoveryActions.length > 0, recoveryActions };
+  }, []);
+
   // Fetch history implementation
   const fetchHistory = useCallback(async (options: { reset?: boolean; includeDetails?: boolean; offset?: number } = {}) => {
-    if (!user || isFetchingRef.current) {
+    if (!user) {
+      return;
+    }
+
+    // Cancel any ongoing fetch operation
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Check if already fetching - use atomic check and set
+    if (isFetchingRef.current) {
+      console.log('🔄 Fetch already in progress, skipping duplicate request');
       return;
     }
 
     const { reset = false, includeDetails: fetchDetails = includeDetails, offset } = options;
     const currentOffset = offset !== undefined ? offset : (reset ? 0 : pagination.offset);
     
+    // Create new abort controller for this fetch
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
     isFetchingRef.current = true;
     
-    setLoading({
-      isLoading: true,
+    setLoadingState({
+      type: reset ? 'fetching' : 'loading_more',
       message: reset ? 'Loading search history...' : 'Loading more...'
     });
     clearError();
 
     const result = await executeWithRetry(
       async () => {
+        // Check if component is still mounted and operation not aborted
+        if (!mountedRef.current || signal.aborted) {
+          throw new Error('Operation cancelled');
+        }
+
         const response: SearchHistoryResponse = await getSearchHistory(
           pagination.limit,
           currentOffset,
-          fetchDetails
+          fetchDetails,
+          { signal } // Pass abort signal to API call
         );
 
         if (!response.success) {
@@ -158,86 +229,172 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       'Fetch search history',
       {
         maxRetries: 3,
-        queueWhenOffline: false
+        queueWhenOffline: false,
+        signal // Pass signal to retry logic
       }
     );
 
-    if (!mountedRef.current) return;
+    // Double-check component is still mounted and operation not aborted
+    if (!mountedRef.current || signal.aborted) {
+      isFetchingRef.current = false;
+      return;
+    }
 
     if (result.success && result.data) {
       const response = result.data;
       
-      setHistory(prev => reset ? response.history : [...prev, ...response.history]);
-      setPagination(response.pagination);
-      
-      // Notify global context
-      if (reset) {
-        historyContext.notifyHistoryRefreshed(response.history);
+      // Only update state if we're still mounted and not aborted
+      if (mountedRef.current && !signal.aborted) {
+        setHistory(prev => reset ? response.history : [...prev, ...response.history]);
+        setPagination(response.pagination);
+        
+        // Notify global context
+        if (reset) {
+          historyContext.notifyHistoryRefreshed(response.history);
+        }
       }
-    } else if (result.error && !result.queued) {
-      setError({
-        hasError: true,
-        message: result.error,
-        code: undefined
-      });
+    } else if (result.error && !result.queued && !signal.aborted) {
+      if (mountedRef.current) {
+        handleErrorWithRecovery(
+          { message: result.error },
+          'fetchHistory'
+        );
+      }
     }
     
     isFetchingRef.current = false;
-    if (mountedRef.current) {
-      setLoading({ isLoading: false });
+    if (mountedRef.current && !signal.aborted) {
+      setLoadingState({ type: 'idle' });
     }
-  }, [user?.id, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError]);
+  }, [user?.id, pagination.limit, includeDetails, executeWithRetry, historyContext, clearError, handleErrorWithRecovery]);
 
   // Main effect for auth state changes and fetching
   useEffect(() => {
+    // Clear any pending auth change timeout
+    if (authChangeTimeoutRef.current) {
+      clearTimeout(authChangeTimeoutRef.current);
+      authChangeTimeoutRef.current = null;
+    }
+
     if (authLoading) {
       return;
     }
 
     if (!user) {
+      // Cancel any ongoing requests when user logs out
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Reset all state
       setHistory([]);
       setPagination(prev => ({ ...prev, offset: 0, has_more: false, total_count: 0 }));
+      setError({ hasError: false });
+      setLoading({ isLoading: false });
+      isFetchingRef.current = false;
       lastUserIdRef.current = null;
       return;
     }
 
     const currentUserId = user.id;
     if (currentUserId !== lastUserIdRef.current) {
+      console.log('🔄 User ID changed, resetting history state', { 
+        oldUser: lastUserIdRef.current, 
+        newUser: currentUserId 
+      });
+      
+      // Cancel any ongoing requests when user changes
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
       lastUserIdRef.current = currentUserId;
       setHistory([]);
+      setError({ hasError: false });
+      isFetchingRef.current = false;
+      
+      // Debounce the fetch to prevent rapid consecutive calls
       if (autoFetch) {
-        fetchHistory({ reset: true });
+        authChangeTimeoutRef.current = setTimeout(() => {
+          if (mountedRef.current && lastUserIdRef.current === currentUserId) {
+            fetchHistory({ reset: true });
+          }
+        }, 100);
       }
-    } else if (autoFetch && history.length === 0 && !loading.isLoading) {
+    } else if (autoFetch && history.length === 0 && !loading.isLoading && !isFetchingRef.current) {
+      // Only fetch if no request is already in progress
       fetchHistory({ reset: true });
     }
   }, [authLoading, user?.id, autoFetch, fetchHistory, history.length, loading.isLoading]);
 
-  // Mount/unmount tracking
+  // Mount/unmount tracking and comprehensive cleanup
   useEffect(() => {
     mountedRef.current = true;
     return () => {
+      console.log('🧹 useSearchHistory cleanup: Component unmounting');
       mountedRef.current = false;
-      // Clear all undo timeouts on unmount
+      
+      // Clear all undo timeouts
       undoTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       undoTimeoutsRef.current.clear();
+      
+      // Clear auth change timeout
+      if (authChangeTimeoutRef.current) {
+        clearTimeout(authChangeTimeoutRef.current);
+        authChangeTimeoutRef.current = null;
+      }
+      
+      // Cancel any ongoing requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Reset fetch flag
+      isFetchingRef.current = false;
     };
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (loading.isLoading || !pagination.has_more) return;
+    if (loading.isLoading || !pagination.has_more || isFetchingRef.current) {
+      console.log('🔄 LoadMore skipped: loading or no more data or fetch in progress');
+      return;
+    }
     
-    const newOffset = pagination.offset + pagination.limit;
+    // Calculate the correct offset based on current data
+    // This helps recover from pagination state corruption
+    const currentItemCount = history.length;
+    const calculatedOffset = Math.max(currentItemCount, pagination.offset);
+    
+    // Use the calculated offset to ensure we don't have gaps
+    const newOffset = calculatedOffset;
+    
+    console.log('📅 LoadMore: offset calculation', {
+      currentHistoryLength: currentItemCount,
+      paginationOffset: pagination.offset,
+      calculatedOffset,
+      newOffset
+    });
+    
     setPagination(prev => ({
       ...prev,
       offset: newOffset
     }));
     
     await fetchHistory({ reset: false, offset: newOffset });
-  }, [loading.isLoading, pagination.has_more, pagination.offset, pagination.limit, fetchHistory]);
+  }, [loading.isLoading, pagination.has_more, pagination.offset, pagination.limit, fetchHistory, history.length]);
 
   const refresh = useCallback(async () => {
+    // Cancel any ongoing requests before refresh
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Reset pagination and fetch
     setPagination(prev => ({ ...prev, offset: 0 }));
+    isFetchingRef.current = false; // Reset fetch flag
     await fetchHistory({ reset: true });
   }, [fetchHistory]);
 
@@ -253,15 +410,32 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
   const adjustPaginationAfterDeletion = useCallback((deletedCount: number) => {
     setPagination(prev => {
       const newTotalCount = Math.max(0, (prev.total_count || 0) - deletedCount);
-      const currentItemsShown = prev.offset + history.length - deletedCount;
+      const currentItemsShown = history.length; // Use current history length after deletions
       
-      // If we have fewer items than we should on current page, try to load more
-      const shouldLoadMore = currentItemsShown < prev.limit && prev.has_more;
+      // Calculate if we still have more items available
+      // If total items is now less than or equal to what we have, no more to load
+      const actuallyHasMore = newTotalCount > currentItemsShown;
+      
+      // If we deleted items and now have fewer than expected for this page,
+      // we might need to adjust the offset or trigger a reload
+      const expectedItemsForPage = Math.min(prev.limit, newTotalCount - prev.offset);
+      const needsAdjustment = currentItemsShown < expectedItemsForPage && actuallyHasMore;
+      
+      console.log('📅 Pagination adjustment:', {
+        deletedCount,
+        newTotalCount,
+        currentItemsShown,
+        expectedItemsForPage,
+        needsAdjustment,
+        actuallyHasMore
+      });
       
       return {
         ...prev,
         total_count: newTotalCount,
-        has_more: shouldLoadMore ? true : prev.has_more
+        has_more: actuallyHasMore,
+        // Reset offset if we've deleted too many items and pagination is broken
+        ...(needsAdjustment && currentItemsShown === 0 ? { offset: 0 } : {})
       };
     });
   }, [history.length]);
@@ -350,6 +524,11 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       // Make the actual API call with retry logic
       const result = await executeWithRetry(
         async () => {
+          // Check if component is still mounted
+          if (!mountedRef.current) {
+            throw new Error('Component unmounted');
+          }
+          
           const response: SearchHistoryDeleteResponse = await deleteSearchHistory(historyId);
           if (!response.success) {
             throw new Error(response.error || 'Failed to delete history item');
@@ -367,6 +546,14 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         // Success! Notify global context
         historyContext.notifyItemDeleted(historyId, itemToDelete);
         console.log('Successfully deleted history item:', historyId);
+        
+        // Check if pagination needs adjustment after successful deletion
+        // If we're on the last page and have few items, might need to reload
+        if (pagination.has_more === false && history.length <= 3) {
+          console.log('🔄 Low item count after deletion, considering refresh');
+          // Could trigger a refresh here if needed
+        }
+        
         return { success: true, undoId: undoToastId };
       } else if (result.queued) {
         // Operation was queued for later
@@ -399,11 +586,10 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete history item';
       
-      setError({
-        hasError: true,
-        message: errorMessage,
-        code: undefined
-      });
+      handleErrorWithRecovery(
+        err instanceof Error ? err : { message: errorMessage },
+        'deleteHistoryItem'
+      );
 
       console.error('Failed to delete history item:', err);
       return { 
@@ -448,6 +634,12 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
         undoTimeoutsRef.current.delete(historyId);
       }
 
+      // Only update state if component is still mounted
+      if (!mountedRef.current) {
+        console.log('🖾 Undo cancelled: component unmounted');
+        return { success: false, error: 'Operation cancelled' };
+      }
+      
       // Restore item to original position
       setHistory(prev => {
         const newHistory = [...prev];
@@ -502,6 +694,13 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
     historyContext.notifyBulkDeleteStarted(historyIds);
 
+    // Update loading state with progress
+    setLoadingState({
+      type: 'bulk_deleting',
+      message: `Deleting ${historyIds.length} items...`,
+      progress: { current: 0, total: historyIds.length }
+    });
+
     const deletedIds: string[] = [];
     const failedIds: string[] = [];
     const errors: Record<string, string> = {};
@@ -509,8 +708,21 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     // Process deletions in batches to avoid overwhelming the server
     const batchSize = 5;
     for (let i = 0; i < historyIds.length; i += batchSize) {
+      // Check if component is still mounted before processing each batch
+      if (!mountedRef.current) {
+        console.log('🖾 Bulk delete cancelled: component unmounted');
+        break;
+      }
+      
       const batch = historyIds.slice(i, i + batchSize);
       const batchPromises = batch.map(async (historyId) => {
+        // Double-check mounted state for each operation
+        if (!mountedRef.current) {
+          failedIds.push(historyId);
+          errors[historyId] = 'Operation cancelled';
+          return;
+        }
+        
         const result = await deleteHistoryItem(historyId, { skipUndo: true });
         if (result.success) {
           deletedIds.push(historyId);
@@ -522,8 +734,18 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
 
       await Promise.all(batchPromises);
       
-      // Small delay between batches
-      if (i + batchSize < historyIds.length) {
+      // Update progress
+      const processed = Math.min(i + batchSize, historyIds.length);
+      if (mountedRef.current) {
+        setLoadingState({
+          type: 'bulk_deleting',
+          message: `Deleting items... (${processed}/${historyIds.length})`,
+          progress: { current: processed, total: historyIds.length }
+        });
+      }
+      
+      // Small delay between batches (only if still mounted)
+      if (i + batchSize < historyIds.length && mountedRef.current) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
@@ -531,6 +753,22 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
     historyContext.notifyBulkDeleteCompleted(deletedIds, failedIds);
 
     const success = failedIds.length === 0;
+    
+    // After bulk deletion, check if we need to reload data to maintain proper pagination
+    if (deletedIds.length > 0) {
+      const remainingItems = history.length - deletedIds.length;
+      const shouldRefresh = remainingItems < 5 && pagination.has_more;
+      
+      if (shouldRefresh) {
+        console.log('🔄 Bulk delete: Too few items remaining, refreshing data');
+        // Trigger a refresh to load more items
+        setTimeout(() => {
+          if (mountedRef.current) {
+            refresh();
+          }
+        }, 500);
+      }
+    }
     
     if (success) {
       toast({
@@ -548,20 +786,34 @@ export function useSearchHistory(options: UseSearchHistoryOptions = {}): UseSear
       });
     }
 
+    // Reset loading state
+    if (mountedRef.current) {
+      setLoadingState({ type: 'idle' });
+    }
+    
     return { success, deletedIds, failedIds, errors };
   }, [user, deleteHistoryItem, historyContext, toast]);
 
   const getSessionDetails = useCallback(async (sessionId: string) => {
-    if (!user) return null;
+    if (!user || !mountedRef.current) return null;
 
     try {
       const response = await getSearchSessionDetails(sessionId);
+      
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Session details fetch cancelled: component unmounted');
+        return null;
+      }
+      
       if (response.success && response.session) {
         return response.session as SearchSessionDetails;
       }
       return null;
     } catch (err) {
-      console.error('Failed to fetch session details:', err);
+      if (mountedRef.current) {
+        console.error('Failed to fetch session details:', err);
+      }
       return null;
     }
   }, [user]);

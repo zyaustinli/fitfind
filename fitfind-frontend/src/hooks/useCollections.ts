@@ -64,11 +64,19 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   const [collectionItems, setCollectionItems] = useState<WishlistItemDetailed[]>([]);
   const [collectionPagination, setCollectionPagination] = useState<PaginationInfo | null>(null);
   
+  // Centralized loading state machine
+  const [loadingState, setLoadingState] = useState<{
+    type: 'idle' | 'fetching' | 'creating' | 'updating' | 'deleting' | 'loading_items';
+    message?: string;
+  }>({ type: 'idle' });
+  
+  // Legacy loading state for backwards compatibility
+  const loading: LoadingState = {
+    isLoading: loadingState.type !== 'idle',
+    message: loadingState.message
+  };
+  
   // UI state
-  const [loading, setLoading] = useState<LoadingState>({
-    isLoading: false,
-    message: undefined
-  });
   const [error, setError] = useState<ErrorState>({
     hasError: false,
     message: undefined,
@@ -79,6 +87,8 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
   const lastUserIdRef = useRef<string | null>(null);
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
+  const authChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Clear error helper
   const clearError = useCallback(() => {
@@ -87,22 +97,47 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   // Fetch collections function
   const fetchCollections = useCallback(async () => {
-    if (!user || isFetchingRef.current) {
+    if (!user) {
       return;
     }
 
+    // Cancel any ongoing fetch operation
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Check if already fetching - use atomic check and set
+    if (isFetchingRef.current) {
+      console.log('🔄 Collections fetch already in progress, skipping duplicate request');
+      return;
+    }
+
+    // Create new abort controller for this fetch
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
     isFetchingRef.current = true;
     
-    setLoading({
-      isLoading: true,
+    setLoadingState({
+      type: 'fetching',
       message: 'Loading collections...'
     });
     clearError();
 
     try {
-      const response: CollectionsResponse = await getCollections();
+      // Check if component is still mounted and operation not aborted
+      if (!mountedRef.current || signal.aborted) {
+        isFetchingRef.current = false;
+        return;
+      }
+
+      const response: CollectionsResponse = await getCollections({ signal });
       
-      if (!mountedRef.current) return;
+      // Double-check component is still mounted and not aborted after async operation
+      if (!mountedRef.current || signal.aborted) {
+        isFetchingRef.current = false;
+        return;
+      }
       
       if (response.success) {
         setCollections(response.collections);
@@ -110,17 +145,18 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to fetch collections');
       }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || signal.aborted) {
+        isFetchingRef.current = false;
+        return;
+      }
       
-      const message = err instanceof Error ? err.message : 'Failed to load collections';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
+      handleErrorWithRecovery(
+        err instanceof Error ? err : { message: 'Failed to load collections' },
+        'fetchCollections'
+      );
     } finally {
       if (mountedRef.current) {
-        setLoading({ isLoading: false });
+        setLoadingState({ type: 'idle' });
       }
       isFetchingRef.current = false;
     }
@@ -128,36 +164,92 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
 
   // Main effect for auth state changes and fetching
   useEffect(() => {
+    // Clear any pending auth change timeout
+    if (authChangeTimeoutRef.current) {
+      clearTimeout(authChangeTimeoutRef.current);
+      authChangeTimeoutRef.current = null;
+    }
+
     if (authLoading) {
       return;
     }
 
     if (!user) {
+      // Cancel any ongoing requests when user logs out
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Reset all state when user logs out
       setCollections([]);
       setCurrentCollection(null);
       setCollectionItems([]);
       setCollectionPagination(null);
+      setError({ hasError: false });
+      setLoadingState({ type: 'idle' });
+      isFetchingRef.current = false;
       lastUserIdRef.current = null;
       return;
     }
 
     const currentUserId = user.id;
     if (currentUserId !== lastUserIdRef.current) {
+      console.log('🔄 Collections: User ID changed, resetting collections state', { 
+        oldUser: lastUserIdRef.current, 
+        newUser: currentUserId 
+      });
+      
+      // Cancel any ongoing requests when user changes
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
       lastUserIdRef.current = currentUserId;
       setCollections([]);
+      setCurrentCollection(null);
+      setCollectionItems([]);
+      setCollectionPagination(null);
+      setError({ hasError: false });
+      setLoadingState({ type: 'idle' });
+      isFetchingRef.current = false;
+      
+      // Debounce the fetch to prevent rapid consecutive calls
       if (autoFetch) {
-        fetchCollections();
+        authChangeTimeoutRef.current = setTimeout(() => {
+          if (mountedRef.current && lastUserIdRef.current === currentUserId) {
+            fetchCollections();
+          }
+        }, 100);
       }
-    } else if (autoFetch && collections.length === 0 && !loading.isLoading) {
+    } else if (autoFetch && collections.length === 0 && !loading.isLoading && !isFetchingRef.current) {
+      // Only fetch if no request is already in progress
       fetchCollections();
     }
   }, [authLoading, user?.id, autoFetch, fetchCollections, collections.length, loading.isLoading]);
 
-  // Mount/unmount tracking
+  // Mount/unmount tracking and comprehensive cleanup
   useEffect(() => {
     mountedRef.current = true;
     return () => {
+      console.log('🧹 useCollections cleanup: Component unmounting');
       mountedRef.current = false;
+      
+      // Clear auth change timeout
+      if (authChangeTimeoutRef.current) {
+        clearTimeout(authChangeTimeoutRef.current);
+        authChangeTimeoutRef.current = null;
+      }
+      
+      // Cancel any ongoing requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Reset fetch flag
+      isFetchingRef.current = false;
     };
   }, []);
 
@@ -167,8 +259,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     description?: string,
     isPrivate: boolean = false
   ): Promise<Collection | null> => {
-    if (!user) return null;
+    if (!user || !mountedRef.current) return null;
 
+    setLoadingState({
+      type: 'creating',
+      message: 'Creating collection...'
+    });
     clearError();
 
     try {
@@ -178,6 +274,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         is_private: isPrivate 
       });
       
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Collection creation cancelled: component unmounted');
+        return null;
+      }
+      
       if (response.success && response.collection) {
         setCollections(prev => [...prev, response.collection!]);
         return response.collection;
@@ -185,7 +287,15 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to create collection');
       }
     } catch (err) {
-      throw err; // Re-throw for the calling component to handle
+      if (mountedRef.current) {
+        setLoadingState({ type: 'idle' });
+        throw err; // Re-throw for the calling component to handle
+      }
+      return null;
+    } finally {
+      if (mountedRef.current) {
+        setLoadingState({ type: 'idle' });
+      }
     }
   }, [user, clearError]);
 
@@ -193,7 +303,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     id: string,
     updates: Partial<Collection>
   ): Promise<boolean> => {
-    if (!user) return false;
+    if (!user || !mountedRef.current) return false;
+
+    setLoadingState({
+      type: 'updating',
+      message: 'Updating collection...'
+    });
 
     try {
       const allowedUpdates = {
@@ -204,6 +319,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       };
       
       const response: CollectionResponse = await updateCollection(id, allowedUpdates);
+      
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Collection update cancelled: component unmounted');
+        return false;
+      }
       
       if (response.success && response.collection) {
         setCollections(prev => 
@@ -219,21 +340,37 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to update collection');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update collection';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
+      if (mountedRef.current) {
+        handleErrorWithRecovery(
+          err instanceof Error ? err : { message: 'Failed to update collection' },
+          'updateExistingCollection'
+        );
+        setLoadingState({ type: 'idle' });
+      }
       return false;
+    } finally {
+      if (mountedRef.current) {
+        setLoadingState({ type: 'idle' });
+      }
     }
   }, [user, currentCollection]);
 
   const deleteExistingCollection = useCallback(async (id: string): Promise<boolean> => {
-    if (!user) return false;
+    if (!user || !mountedRef.current) return false;
+
+    setLoadingState({
+      type: 'deleting',
+      message: 'Deleting collection...'
+    });
 
     try {
       const response: ApiResponse = await deleteCollection(id);
+      
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Collection deletion cancelled: component unmounted');
+        return false;
+      }
       
       if (response.success) {
         setCollections(prev => prev.filter(col => col.id !== id));
@@ -249,13 +386,20 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to delete collection');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete collection';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
+      if (mountedRef.current) {
+        const message = err instanceof Error ? err.message : 'Failed to delete collection';
+        setError({
+          hasError: true,
+          message,
+          code: undefined
+        });
+        setLoadingState({ type: 'idle' });
+      }
       return false;
+    } finally {
+      if (mountedRef.current) {
+        setLoadingState({ type: 'idle' });
+      }
     }
   }, [user, currentCollection]);
 
@@ -271,13 +415,13 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     collectionId: string,
     reset: boolean = true
   ) => {
-    if (!user) return;
+    if (!user || !mountedRef.current) return;
 
     const currentOffset = reset ? 0 : (collectionPagination?.offset || 0);
     const limitToFetch = 50;
     
-    setLoading({
-      isLoading: true,
+    setLoadingState({
+      type: 'loading_items',
       message: reset ? 'Loading items...' : 'Loading more...'
     });
 
@@ -288,7 +432,10 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         currentOffset
       );
 
-      if (!mountedRef.current) return;
+      // Double-check component is still mounted after async operation
+      if (!mountedRef.current) {
+        return;
+      }
 
       if (response.success) {
         if (response.collection) {
@@ -318,7 +465,7 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
       }
     } finally {
       if (mountedRef.current) {
-        setLoading({ isLoading: false });
+        setLoadingState({ type: 'idle' });
       }
     }
   }, [user, collectionPagination?.offset]);
@@ -327,12 +474,18 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     collectionId: string,
     savedItemId: string
   ): Promise<boolean> => {
-    if (!user) return false;
+    if (!user || !mountedRef.current) return false;
 
     try {
       console.log('useCollections.addToCollection: Adding item to collection', { collectionId, savedItemId });
       const response = await addItemToCollection(collectionId, { saved_item_id: savedItemId });
       console.log('useCollections.addToCollection: API response:', response);
+      
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Add to collection cancelled: component unmounted');
+        return false;
+      }
       
       if (response.success) {
         // Update collection item count
@@ -351,13 +504,15 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to add item');
       }
     } catch (err) {
-      console.error('useCollections.addToCollection: Exception caught:', err);
-      const message = err instanceof Error ? err.message : 'Failed to add item';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
+      if (mountedRef.current) {
+        console.error('useCollections.addToCollection: Exception caught:', err);
+        const message = err instanceof Error ? err.message : 'Failed to add item';
+        setError({
+          hasError: true,
+          message,
+          code: undefined
+        });
+      }
       return false;
     }
   }, [user]);
@@ -366,10 +521,16 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     collectionId: string,
     savedItemId: string
   ): Promise<boolean> => {
-    if (!user) return false;
+    if (!user || !mountedRef.current) return false;
 
     try {
       const response = await removeItemFromCollection(collectionId, savedItemId);
+      
+      // Check if still mounted after async operation
+      if (!mountedRef.current) {
+        console.log('🖾 Remove from collection cancelled: component unmounted');
+        return false;
+      }
       
       if (response.success) {
         // Update collection item count
@@ -393,12 +554,14 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         throw new Error(response.error || 'Failed to remove item');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to remove item';
-      setError({
-        hasError: true,
-        message,
-        code: undefined
-      });
+      if (mountedRef.current) {
+        const message = err instanceof Error ? err.message : 'Failed to remove item';
+        setError({
+          hasError: true,
+          message,
+          code: undefined
+        });
+      }
       return false;
     }
   }, [user, currentCollection]);
@@ -408,28 +571,32 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
     fromCollectionId: string,
     toCollectionId: string
   ): Promise<boolean> => {
-    if (!user) return false;
+    if (!user || !mountedRef.current) return false;
 
     try {
       // Remove from old collection
       const removeSuccess = await removeFromCollection(fromCollectionId, savedItemId);
-      if (!removeSuccess) return false;
+      if (!removeSuccess || !mountedRef.current) return false;
 
       // Add to new collection
       const addSuccess = await addToCollection(toCollectionId, savedItemId);
       if (!addSuccess) {
-        // Try to revert by adding back to original collection
-        await addToCollection(fromCollectionId, savedItemId);
+        // Try to revert by adding back to original collection (only if still mounted)
+        if (mountedRef.current) {
+          await addToCollection(fromCollectionId, savedItemId);
+        }
         return false;
       }
 
       return true;
     } catch (err) {
-      setError({
-        hasError: true,
-        message: 'Failed to move item between collections',
-        code: undefined
-      });
+      if (mountedRef.current) {
+        setError({
+          hasError: true,
+          message: 'Failed to move item between collections',
+          code: undefined
+        });
+      }
       return false;
     }
   }, [user, removeFromCollection, addToCollection]);

@@ -111,12 +111,14 @@ export function useNetwork(options: UseNetworkOptions = {}) {
       maxRetries?: number;
       queueWhenOffline?: boolean;
       showToast?: boolean;
+      signal?: AbortSignal;
     }
   ): Promise<{ success: boolean; data?: T; error?: string; queued?: boolean }> => {
     const {
       maxRetries: customMaxRetries = maxRetries,
       queueWhenOffline = true,
-      showToast = false
+      showToast = false,
+      signal
     } = options || {};
 
     // If offline and queuing is enabled, queue the operation
@@ -132,6 +134,14 @@ export function useNetwork(options: UseNetworkOptions = {}) {
     let lastError: Error | null = null;
     
     for (let attempt = 0; attempt <= customMaxRetries; attempt++) {
+      // Check if operation was aborted before each attempt
+      if (signal?.aborted) {
+        return {
+          success: false,
+          error: 'Operation aborted'
+        };
+      }
+      
       try {
         const result = await operation();
         return { success: true, data: result };
@@ -147,9 +157,16 @@ export function useNetwork(options: UseNetworkOptions = {}) {
         }
 
         // Wait before retry (exponential backoff)
-        if (attempt < customMaxRetries) {
+        if (attempt < customMaxRetries && !signal?.aborted) {
           const delay = retryDelay * Math.pow(2, attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise(resolve => {
+            const timeout = setTimeout(resolve, delay);
+            // If signal is aborted during delay, resolve immediately
+            signal?.addEventListener('abort', () => {
+              clearTimeout(timeout);
+              resolve(undefined);
+            });
+          });
         }
       }
     }
