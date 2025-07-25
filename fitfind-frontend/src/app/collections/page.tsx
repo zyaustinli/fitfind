@@ -18,7 +18,7 @@ type CreateCollectionModalState =
   | { isOpen: true }
 
 export default function CollectionsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
   const [createModalState, setCreateModalState] = useState<CreateCollectionModalState>({ isOpen: false });
   const [searchQuery, setSearchQuery] = useState("");
@@ -42,7 +42,7 @@ export default function CollectionsPage() {
   );
 
   // Show loading state while checking authentication or loading collections
-  if (authLoading || (loading.isLoading && collections.length === 0)) {
+  if (authLoading || !initialLoadComplete) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
         <div className="flex justify-center pt-32">

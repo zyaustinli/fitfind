@@ -7,15 +7,16 @@ import {
   getCurrentSession, 
   getUserProfile,
   type AuthState, 
-  type UserProfile,
   type SignUpData,
   type SignInData,
   signUp as authSignUp,
   signIn as authSignIn,
   signOut as authSignOut
 } from '@/lib/auth'
+import type { UserProfile } from '@/types'
 
 interface AuthContextType extends AuthState {
+  initialLoadComplete: boolean;
   signUp: (data: SignUpData) => Promise<{ success: boolean; error?: string }>
   signIn: (data: SignInData) => Promise<{ success: boolean; error?: string }>
   signOut: () => Promise<{ success: boolean; error?: string }>
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     session: null,
     loading: true
   });
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const mountedRef = useRef(true);
   const initializingRef = useRef(false);
@@ -77,6 +79,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         loading: false
       });
     } finally {
+      if (mountedRef.current) {
+        setInitialLoadComplete(true);
+      }
       initializingRef.current = false;
     }
   }, [setAuthState]);
@@ -154,6 +159,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const value: AuthContextType = {
     ...state,
+    initialLoadComplete,
     signUp,
     signIn,
     signOut,

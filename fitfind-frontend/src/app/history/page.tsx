@@ -34,7 +34,7 @@ interface BulkDeleteState {
 }
 
 export default function HistoryPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialLoadComplete } = useAuth();
   const { toast } = useToast();
   const historyContext = useHistoryContext();
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false });
@@ -322,7 +322,7 @@ export default function HistoryPage() {
   }, [refresh, toast]);
 
   // Show loading state while checking authentication or loading history
-  if (authLoading || (historyLoading.isLoading && history.length === 0)) {
+  if (authLoading || !initialLoadComplete) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-muted/30 to-primary/5">
         <div className="flex justify-center pt-32">
