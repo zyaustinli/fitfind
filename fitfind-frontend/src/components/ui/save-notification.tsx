@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddToCollectionModal } from "@/components/collections/AddToCollectionModal";
 import { ClothingItem, WishlistItemDetailed } from "@/types";
@@ -16,6 +16,18 @@ interface SaveNotificationProps {
   savedWishlistItem?: WishlistItemDetailed | null;
   message?: string;
 }
+
+// Utility function to check if a wishlist item matches a product ID
+const doesWishlistItemMatchProductId = (wishlistItem: WishlistItemDetailed, productId: string): boolean => {
+  if (!productId || !wishlistItem) return false;
+  
+  return (
+    wishlistItem.products.id === productId ||
+    wishlistItem.products.external_id === productId ||
+    wishlistItem.product_id === productId ||
+    wishlistItem.id === productId
+  );
+};
 
 // Convert ClothingItem to WishlistItemDetailed for the modal
 const convertToWishlistItem = (item: ClothingItem): WishlistItemDetailed => {
@@ -64,6 +76,7 @@ export function SaveNotification({
   const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [wishlistItem, setWishlistItem] = useState<WishlistItemDetailed | null>(null);
+  const [isLoadingModal, setIsLoadingModal] = useState(false);
   
   const { wishlist, refresh } = useWishlist({ autoFetch: false });
 
@@ -82,6 +95,13 @@ export function SaveNotification({
   }, [show, onClose]);
 
   const handleManageClick = async () => {
+    // Prevent multiple clicks while loading
+    if (isLoadingModal) {
+      console.log('SaveNotification: Already loading, ignoring click');
+      return;
+    }
+
+    setIsLoadingModal(true);
     console.log('SaveNotification: handleManageClick called', {
       hasSavedWishlistItem: !!savedWishlistItem,
       savedWishlistItemId: savedWishlistItem?.id,
@@ -90,61 +110,76 @@ export function SaveNotification({
       wishlistLength: wishlist.length
     });
 
-    // Use the savedWishlistItem if available (from recent save)
-    if (savedWishlistItem) {
-      console.log('SaveNotification: Using saved wishlist item:', savedWishlistItem.id);
-      setWishlistItem(savedWishlistItem);
-      setShowCollectionModal(true);
-      setIsVisible(false);
-      return;
-    }
-
-    // If no savedWishlistItem, try to find it in current wishlist state
-    if (savedItem?.product_id) {
-      console.log('SaveNotification: Searching for wishlist item with product_id:', savedItem.product_id);
-      const foundWishlistItem = wishlist.find(item => 
-        item.products.id === savedItem.product_id || 
-        item.products.external_id === savedItem.product_id
-      );
-      
-      if (foundWishlistItem) {
-        console.log('SaveNotification: Found wishlist item in state:', foundWishlistItem.id);
-        setWishlistItem(foundWishlistItem);
+    try {
+      // First priority: Use the savedWishlistItem if available (from recent save)
+      if (savedWishlistItem) {
+        console.log('SaveNotification: Using saved wishlist item:', savedWishlistItem.id);
+        setWishlistItem(savedWishlistItem);
         setShowCollectionModal(true);
         setIsVisible(false);
         return;
       }
-    }
 
-    // If we still don't have a valid wishlist item, we need to refresh the wishlist
-    console.warn('SaveNotification: No valid wishlist item found, refreshing wishlist before opening collections modal');
-    
-    // Force refresh the wishlist to get the latest state
-    try {
-      await refresh(); // This should be available from useWishlist hook
-      
-      // Try to find the item again after refresh
+      // Second priority: Try to find it in current wishlist state
       if (savedItem?.product_id) {
+        console.log('SaveNotification: Searching for wishlist item with product_id:', savedItem.product_id);
         const foundWishlistItem = wishlist.find(item => 
-          item.products.id === savedItem.product_id || 
-          item.products.external_id === savedItem.product_id
+          doesWishlistItemMatchProductId(item, savedItem.product_id!)
         );
         
         if (foundWishlistItem) {
-          console.log('SaveNotification: Found wishlist item after refresh:', foundWishlistItem.id);
+          console.log('SaveNotification: Found wishlist item in state:', foundWishlistItem.id);
           setWishlistItem(foundWishlistItem);
           setShowCollectionModal(true);
           setIsVisible(false);
           return;
         }
       }
-    } catch (error) {
-      console.error('SaveNotification: Failed to refresh wishlist:', error);
-    }
 
-    // Last resort: show error message instead of opening broken modal
-    console.error('SaveNotification: Unable to find valid wishlist item, cannot open collections modal');
-    alert('Unable to manage collections for this item. Please refresh the page and try again.');
+      // Third priority: Refresh wishlist and try again
+      console.log('SaveNotification: Item not found in current state, refreshing wishlist...');
+      
+      try {
+        await refresh();
+        
+        // Give a small delay to ensure state is updated
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Try to find the item again after refresh
+        if (savedItem?.product_id) {
+          console.log('SaveNotification: Searching again after refresh with product_id:', savedItem.product_id);
+          const foundWishlistItem = wishlist.find(item => 
+            doesWishlistItemMatchProductId(item, savedItem.product_id!)
+          );
+          
+          if (foundWishlistItem) {
+            console.log('SaveNotification: Found wishlist item after refresh:', foundWishlistItem.id);
+            setWishlistItem(foundWishlistItem);
+            setShowCollectionModal(true);
+            setIsVisible(false);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('SaveNotification: Failed to refresh wishlist:', error);
+      }
+
+      // Fourth priority: Create a temporary wishlist item from the saved item
+      if (savedItem) {
+        console.log('SaveNotification: Creating temporary wishlist item from saved item');
+        const tempWishlistItem = convertToWishlistItem(savedItem);
+        setWishlistItem(tempWishlistItem);
+        setShowCollectionModal(true);
+        setIsVisible(false);
+        return;
+      }
+
+      // Last resort: show improved error message
+      console.error('SaveNotification: Unable to find valid wishlist item, cannot open collections modal');
+      alert('Unable to manage collections for this item right now. The item has been saved to your wishlist. Please try accessing collections from the wishlist page.');
+    } finally {
+      setIsLoadingModal(false);
+    }
   };
 
   const handleCollectionModalClose = (open: boolean) => {
@@ -187,9 +222,17 @@ export function SaveNotification({
             variant="ghost"
             size="sm"
             onClick={handleManageClick}
+            disabled={isLoadingModal}
             className="ml-2 h-7 px-3 text-xs font-medium"
           >
-            Manage
+            {isLoadingModal ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Manage'
+            )}
           </Button>
         </Card>
       </div>

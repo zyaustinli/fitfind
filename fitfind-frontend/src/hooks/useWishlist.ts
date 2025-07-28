@@ -218,7 +218,16 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
       return null;
     }
 
+    if (!productId) {
+      console.error('useWishlist.addItem: No productId provided');
+      return null;
+    }
+
     console.log('useWishlist.addItem: Starting save for productId:', productId);
+    
+    // Clear any previous errors
+    setError({ hasError: false });
+    
     // Optimistic update
     setWishlistStatus(prev => ({ ...prev, [productId]: true }));
     
@@ -229,11 +238,28 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
       
       const wishlistItem = response.item || response.wishlist_item;
       if (response.success && wishlistItem) {
-        // Add the new item to the wishlist if it's not already there
+        console.log('useWishlist.addItem: Successfully received wishlist item:', wishlistItem.id);
+        
+        // Ensure state is updated synchronously
         setWishlist(prev => {
-          const exists = prev.some(item => item.products.id === productId);
-          if (exists) return prev;
-          return [wishlistItem!, ...prev];
+          // Check if item already exists to prevent duplicates
+          const existingIndex = prev.findIndex(item => 
+            item.products.id === productId || 
+            item.products.external_id === productId ||
+            item.product_id === productId ||
+            item.id === wishlistItem.id ||
+            item.products.id === wishlistItem.products.id
+          );
+          
+          if (existingIndex !== -1) {
+            console.log('useWishlist.addItem: Item already exists, updating in place');
+            const updated = [...prev];
+            updated[existingIndex] = wishlistItem;
+            return updated;
+          } else {
+            console.log('useWishlist.addItem: Adding new item to wishlist');
+            return [wishlistItem, ...prev];
+          }
         });
         
         // Update pagination count
@@ -242,14 +268,21 @@ export function useWishlist(options: UseWishlistOptions = {}): UseWishlistReturn
           total_count: (prev.total_count || 0) + 1
         }));
         
-        console.log('useWishlist.addItem: Successfully saved item, returning wishlist item');
+        // Ensure wishlist status is correctly set
+        setWishlistStatus(prev => ({ 
+          ...prev, 
+          [productId]: true,
+          [wishlistItem.products.id]: true
+        }));
+        
+        console.log('useWishlist.addItem: State updated, returning wishlist item');
         return wishlistItem;
       } else {
-        console.log('useWishlist.addItem: API response indicates failure:', response.error);
+        console.warn('useWishlist.addItem: API response indicates failure:', response.error);
         throw new Error(response.error || 'Failed to add item to wishlist');
       }
     } catch (err) {
-      console.log('useWishlist.addItem: Error occurred:', err);
+      console.error('useWishlist.addItem: Error occurred:', err);
       // Revert optimistic update
       setWishlistStatus(prev => ({ ...prev, [productId]: false }));
       

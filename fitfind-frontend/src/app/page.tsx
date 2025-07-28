@@ -164,20 +164,32 @@ export default function Home() {
       alert('Please sign in to save items to your wishlist.');
       return;
     }
-    if (item.product_id) {
-      console.log('Saving item:', item.title, 'with ID:', item.product_id);
+    
+    if (!item.product_id) {
+      console.error('handleSaveItem: No product_id found for item:', item.title);
+      alert('Unable to save this item. Please try refreshing the page.');
+      return;
+    }
+
+    console.log('handleSaveItem: Saving item:', item.title, 'with ID:', item.product_id);
+    
+    try {
       const savedWishlistItem = await addItem(item.product_id);
-      console.log('Save result:', savedWishlistItem);
+      console.log('handleSaveItem: Save result:', savedWishlistItem);
+      
       if (savedWishlistItem) {
         // Update local state to show saved status immediately
         item.is_saved = true;
-        console.log('Showing save notification for:', item.title);
+        console.log('handleSaveItem: Successfully saved, showing notification for:', item.title);
         showSaveNotification(item, undefined, savedWishlistItem);
       } else {
-        console.log('Save failed, not showing notification');
+        console.warn('handleSaveItem: addItem returned null, save may have failed');
+        // Still show notification but without savedWishlistItem for fallback handling
+        showSaveNotification(item, "Added to favorites (syncing...)", undefined);
       }
-    } else {
-      console.log('No product_id found for item:', item.title);
+    } catch (error) {
+      console.error('handleSaveItem: Error saving item:', error);
+      alert('Failed to save item. Please try again.');
     }
   }, [user, addItem, showSaveNotification]);
 
