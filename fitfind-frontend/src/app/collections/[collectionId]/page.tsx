@@ -32,7 +32,7 @@ export default function CollectionDetailPage() {
   // Track items that are in the process of being saved/unsaved
   const [processingItems, setProcessingItems] = useState<Set<string>>(new Set());
   
-  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
+  const { showNotification, savedItem, savedWishlistItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const {
     currentCollection,
@@ -432,6 +432,7 @@ export default function CollectionDetailPage() {
           show={showNotification}
           onClose={hideSaveNotification}
           savedItem={savedItem}
+          savedWishlistItem={savedWishlistItem}
           message={notificationMessage}
         />
       </div>

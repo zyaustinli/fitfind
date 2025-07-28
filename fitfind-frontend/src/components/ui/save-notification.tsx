@@ -13,6 +13,7 @@ interface SaveNotificationProps {
   show: boolean;
   onClose: () => void;
   savedItem: ClothingItem | null;
+  savedWishlistItem?: WishlistItemDetailed | null;
   message?: string;
 }
 
@@ -57,6 +58,7 @@ export function SaveNotification({
   show,
   onClose,
   savedItem,
+  savedWishlistItem,
   message = "Added to favorites",
 }: SaveNotificationProps) {
   const [showCollectionModal, setShowCollectionModal] = useState(false);
@@ -80,22 +82,40 @@ export function SaveNotification({
   }, [show, onClose]);
 
   const handleManageClick = () => {
-    // Find the actual wishlist item by product_id
-    if (savedItem?.product_id) {
+    console.log('SaveNotification: handleManageClick called', {
+      hasSavedWishlistItem: !!savedWishlistItem,
+      savedWishlistItemId: savedWishlistItem?.id,
+      hasSavedItem: !!savedItem,
+      savedItemProductId: savedItem?.product_id,
+      wishlistLength: wishlist.length
+    });
+
+    // Use the savedWishlistItem if available (from recent save), otherwise search wishlist
+    if (savedWishlistItem) {
+      console.log('SaveNotification: Using saved wishlist item:', savedWishlistItem.id);
+      setWishlistItem(savedWishlistItem);
+    } else if (savedItem?.product_id) {
+      console.log('SaveNotification: Searching for wishlist item with product_id:', savedItem.product_id);
       const foundWishlistItem = wishlist.find(item => 
         item.products.id === savedItem.product_id || 
         item.products.external_id === savedItem.product_id
       );
       
       if (foundWishlistItem) {
-        console.log('SaveNotification: Found wishlist item:', foundWishlistItem.id);
+        console.log('SaveNotification: Found wishlist item in state:', foundWishlistItem.id);
         setWishlistItem(foundWishlistItem);
       } else {
-        console.log('SaveNotification: Wishlist item not found, using converted item');
+        console.warn('SaveNotification: Wishlist item not found in state, this may cause collection issues');
+        console.log('SaveNotification: Available wishlist items:', wishlist.map(item => ({
+          id: item.id,
+          productId: item.products.id,
+          externalId: item.products.external_id,
+          title: item.products.title
+        })));
         setWishlistItem(convertToWishlistItem(savedItem));
       }
     } else {
-      console.log('SaveNotification: No product_id, using converted item');
+      console.warn('SaveNotification: No product_id available, using converted item - this may cause collection issues');
       setWishlistItem(savedItem ? convertToWishlistItem(savedItem) : null);
     }
     

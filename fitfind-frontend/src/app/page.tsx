@@ -34,7 +34,7 @@ export default function Home() {
 
   const { user } = useAuth();
   const { addItem, removeItem, isInWishlist, checkStatus, initialLoadStatus, setInitialStatus } = useWishlist({});
-  const { showNotification, savedItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
+  const { showNotification, savedItem, savedWishlistItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
     setUploadedImage(image);
@@ -166,13 +166,13 @@ export default function Home() {
     }
     if (item.product_id) {
       console.log('Saving item:', item.title, 'with ID:', item.product_id);
-      const success = await addItem(item.product_id);
-      console.log('Save result:', success);
-      if (success) {
+      const savedWishlistItem = await addItem(item.product_id);
+      console.log('Save result:', savedWishlistItem);
+      if (savedWishlistItem) {
         // Update local state to show saved status immediately
         item.is_saved = true;
         console.log('Showing save notification for:', item.title);
-        showSaveNotification(item);
+        showSaveNotification(item, undefined, savedWishlistItem);
       } else {
         console.log('Save failed, not showing notification');
       }
@@ -469,6 +469,7 @@ export default function Home() {
         show={showNotification}
         onClose={hideSaveNotification}
         savedItem={savedItem}
+        savedWishlistItem={savedWishlistItem}
         message={notificationMessage}
       />
     </>

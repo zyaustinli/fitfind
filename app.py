@@ -781,18 +781,38 @@ def add_item_to_collection(collection_id):
         
         saved_item_id = data['saved_item_id']
         
-        success = db_service.add_item_to_collection(collection_id, saved_item_id, user_id)
+        result = db_service.add_item_to_collection(collection_id, saved_item_id, user_id)
         
-        if success:
+        if result['success']:
             return jsonify({
                 'success': True,
                 'message': 'Item added to collection successfully'
             })
         else:
+            # Return specific error based on error code
+            error_message = result['error']
+            error_code = result.get('error_code')
+            
+            # Map error codes to HTTP status codes
+            status_code = 400
+            if error_code == 'COLLECTION_NOT_FOUND':
+                status_code = 404
+                error_message = 'Collection not found'
+            elif error_code == 'SAVED_ITEM_NOT_FOUND':
+                status_code = 404
+                error_message = 'Saved item not found. The item may have been removed from your wishlist.'
+            elif error_code == 'ITEM_ALREADY_IN_COLLECTION':
+                status_code = 409
+                error_message = 'Item is already in this collection'
+            elif error_code == 'DATABASE_ERROR':
+                status_code = 500
+                error_message = 'Database error occurred'
+            
             return jsonify({
                 'success': False,
-                'error': 'Failed to add item to collection. Item may already be in the collection or not found.'
-            }), 400
+                'error': error_message,
+                'error_code': error_code
+            }), status_code
     except Exception as e:
         print(f"Error adding item to collection: {str(e)}")
         return jsonify({

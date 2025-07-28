@@ -511,8 +511,29 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
         console.log('useCollections.addToCollection: Successfully added item to collection');
         return true;
       } else {
-        console.error('useCollections.addToCollection: API returned error:', response.error);
-        throw new Error(response.error || 'Failed to add item');
+        const errorCode = response.error_code;
+        const errorMessage = response.error || 'Failed to add item';
+        
+        console.error('useCollections.addToCollection: API returned error:', {
+          error: errorMessage,
+          errorCode,
+          collectionId,
+          savedItemId
+        });
+        
+        // Create a more descriptive error based on the error code
+        let userFriendlyError = errorMessage;
+        if (errorCode === 'SAVED_ITEM_NOT_FOUND') {
+          userFriendlyError = 'This item is no longer in your wishlist. Please refresh the page and try again.';
+        } else if (errorCode === 'COLLECTION_NOT_FOUND') {
+          userFriendlyError = 'Collection not found. Please refresh the page and try again.';
+        } else if (errorCode === 'ITEM_ALREADY_IN_COLLECTION') {
+          userFriendlyError = 'This item is already in the selected collection.';
+        }
+        
+        const error = new Error(userFriendlyError);
+        error.code = errorCode;
+        throw error;
       }
     } catch (err) {
       if (mountedRef.current) {

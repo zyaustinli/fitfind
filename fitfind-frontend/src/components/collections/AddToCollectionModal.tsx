@@ -103,45 +103,95 @@ export function AddToCollectionModal({
       setLoading(true);
       setError("");
 
-      console.log('AddToCollectionModal: Adding item to collections', { 
+      console.log('AddToCollectionModal: Starting add operation', { 
         itemId: item.id, 
+        itemProductId: item.products?.id,
+        itemExternalId: item.products?.external_id,
         selectedCollections: Array.from(selectedCollections),
-        itemTitle: item.products?.title || 'Unknown'
+        itemTitle: item.products?.title || 'Unknown',
+        selectedCollectionNames: Array.from(selectedCollections).map(id => {
+          const collection = collections.find(c => c.id === id);
+          return collection ? collection.name : 'Unknown';
+        })
       });
 
       // Add item to each selected collection
-      const promises = Array.from(selectedCollections).map(collectionId => {
-        console.log('AddToCollectionModal: Adding to collection:', collectionId);
-        return addToCollection(collectionId, item.id);
+      const promises = Array.from(selectedCollections).map(async (collectionId) => {
+        const collection = collections.find(c => c.id === collectionId);
+        console.log('AddToCollectionModal: Adding to collection:', {
+          collectionId,
+          collectionName: collection?.name || 'Unknown',
+          itemId: item.id
+        });
+        
+        try {
+          const result = await addToCollection(collectionId, item.id);
+          console.log('AddToCollectionModal: Collection addition result:', {
+            collectionId,
+            collectionName: collection?.name,
+            success: result
+          });
+          return { collectionId, collectionName: collection?.name, success: result };
+        } catch (err) {
+          console.error('AddToCollectionModal: Failed to add to collection:', {
+            collectionId,
+            collectionName: collection?.name,
+            error: err
+          });
+          return { collectionId, collectionName: collection?.name, success: false, error: err };
+        }
       });
 
       const results = await Promise.all(promises);
-      const successCount = results.filter(Boolean).length;
+      const successfulResults = results.filter(r => r.success);
+      const failedResults = results.filter(r => !r.success);
 
-      console.log('AddToCollectionModal: Results summary', { 
+      console.log('AddToCollectionModal: Operation complete', { 
         totalCollections: selectedCollections.size,
-        successCount,
-        results 
+        successCount: successfulResults.length,
+        failedCount: failedResults.length,
+        successfulCollections: successfulResults.map(r => r.collectionName),
+        failedCollections: failedResults.map(r => ({ name: r.collectionName, error: r.error }))
       });
 
-      if (successCount === selectedCollections.size) {
+      if (successfulResults.length === selectedCollections.size) {
         // All additions successful
         console.log('AddToCollectionModal: All additions successful');
         onSuccess?.();
         onOpenChange(false);
-      } else if (successCount > 0) {
+      } else if (successfulResults.length > 0) {
         // Some successful, some failed
-        const errorMsg = `Added to ${successCount} of ${selectedCollections.size} collections`;
+        const successNames = successfulResults.map(r => r.collectionName).join(', ');
+        const failedNames = failedResults.map(r => r.collectionName).join(', ');
+        const errorMsg = `Added to: ${successNames}. Failed: ${failedNames}`;
         console.warn('AddToCollectionModal: Partial success:', errorMsg);
         setError(errorMsg);
       } else {
         // All failed
-        console.error('AddToCollectionModal: All additions failed');
-        setError("Failed to add item to collections");
+        const errorDetails = failedResults.map(r => 
+          `${r.collectionName}: ${r.error instanceof Error ? r.error.message : 'Unknown error'}`
+        ).join('; ');
+        
+        console.error('AddToCollectionModal: All additions failed', { errorDetails });
+        
+        // Check if it's the specific "already in collection" error
+        const hasAlreadyInCollectionError = failedResults.some(r => 
+          r.error && (
+            r.error.message?.includes('already be in the collection') ||
+            r.error.message?.includes('already in the collection') ||
+            r.error.message?.includes('not found')
+          )
+        );
+        
+        if (hasAlreadyInCollectionError) {
+          setError("This item may already be in the selected collection(s) or there was a synchronization issue. Please try refreshing the page and try again.");
+        } else {
+          setError(`Failed to add item to collections: ${errorDetails}`);
+        }
       }
     } catch (err) {
-      console.error('AddToCollectionModal: Exception caught:', err);
-      const errorMessage = err instanceof Error ? err.message : "An error occurred while adding to collections";
+      console.error('AddToCollectionModal: Unexpected exception:', err);
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred while adding to collections";
       setError(errorMessage);
     } finally {
       setLoading(false);

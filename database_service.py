@@ -319,7 +319,9 @@ class DatabaseService:
                     )
                 
                 if default_collection:
-                    self.add_item_to_collection(default_collection["id"], wishlist_item["id"], user_id)
+                    result = self.add_item_to_collection(default_collection["id"], wishlist_item["id"], user_id)
+                    if not result['success']:
+                        logger.warning(f"Failed to add item to default collection: {result['error']}")
                 
                 return wishlist_item
             
@@ -974,14 +976,22 @@ class DatabaseService:
             logger.error(f"Error getting items in collection {collection_id}: {e}")
             return []
 
-    def add_item_to_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> bool:
-        """Add a saved item to a collection"""
+    def add_item_to_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> Dict[str, Any]:
+        """Add a saved item to a collection
+        
+        Returns:
+            Dict with keys: 'success' (bool), 'error' (str), 'error_code' (str)
+        """
         try:
             # Verify the collection belongs to the user
             collection = self.get_collection_by_id(collection_id, user_id)
             if not collection:
                 logger.warning(f"Collection {collection_id} not found or not owned by user {user_id}")
-                return False
+                return {
+                    'success': False,
+                    'error': f'Collection not found or access denied',
+                    'error_code': 'COLLECTION_NOT_FOUND'
+                }
             
             # Verify the saved item belongs to the user
             saved_item_response = (self.service_client.table("user_saved_items")
@@ -992,7 +1002,11 @@ class DatabaseService:
             
             if not saved_item_response.data:
                 logger.warning(f"Saved item {saved_item_id} not found or not owned by user {user_id}")
-                return False
+                return {
+                    'success': False,
+                    'error': f'Saved item not found or access denied',
+                    'error_code': 'SAVED_ITEM_NOT_FOUND'
+                }
             
             # Check if item is already in the collection
             existing_response = (self.service_client.table("collection_items")
@@ -1003,7 +1017,11 @@ class DatabaseService:
             
             if existing_response.data:
                 logger.warning(f"Item {saved_item_id} is already in collection {collection_id}")
-                return False
+                return {
+                    'success': False,
+                    'error': f'Item is already in this collection',
+                    'error_code': 'ITEM_ALREADY_IN_COLLECTION'
+                }
             
             # Get the next position in the collection
             position_response = (self.service_client.table("collection_items")
@@ -1027,10 +1045,26 @@ class DatabaseService:
                        .insert(collection_item_data)
                        .execute())
             
-            return bool(response.data)
+            if response.data:
+                return {
+                    'success': True,
+                    'error': None,
+                    'error_code': None
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'Failed to insert item into collection',
+                    'error_code': 'INSERT_FAILED'
+                }
+                
         except Exception as e:
             logger.error(f"Error adding item {saved_item_id} to collection {collection_id}: {e}")
-            return False
+            return {
+                'success': False,
+                'error': f'Database error: {str(e)}',
+                'error_code': 'DATABASE_ERROR'
+            }
 
     def remove_item_from_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> bool:
         """Remove a saved item from a collection"""
