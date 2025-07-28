@@ -94,22 +94,6 @@ export function SaveNotification({
     }
   }, [show, onClose]);
 
-  // Sync savedWishlistItem prop changes and reset internal state
-  useEffect(() => {
-    console.log('SaveNotification: savedWishlistItem prop changed:', {
-      newSavedWishlistItemId: savedWishlistItem?.id,
-      currentWishlistItemId: wishlistItem?.id,
-      show
-    });
-    
-    // Reset internal wishlist item state when savedWishlistItem prop changes
-    if (show && savedWishlistItem?.id !== wishlistItem?.id) {
-      console.log('SaveNotification: Resetting internal wishlist item state due to prop change');
-      setWishlistItem(null);
-      setShowCollectionModal(false);
-      setIsLoadingModal(false);
-    }
-  }, [savedWishlistItem?.id, show, wishlistItem?.id]);
 
   const handleManageClick = async () => {
     // Prevent multiple clicks while loading
