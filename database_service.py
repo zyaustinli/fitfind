@@ -982,8 +982,37 @@ class DatabaseService:
         Returns:
             Dict with keys: 'success' (bool), 'error' (str), 'error_code' (str)
         """
+        logger.info(f"Adding item to collection - collection_id: {collection_id}, saved_item_id: {saved_item_id}, user_id: {user_id}")
+        
+        # Validate input parameters
+        if not collection_id or not saved_item_id or not user_id:
+            logger.error(f"Invalid parameters: collection_id={collection_id}, saved_item_id={saved_item_id}, user_id={user_id}")
+            return {
+                'success': False,
+                'error': 'Invalid parameters provided',
+                'error_code': 'INVALID_PARAMETERS'
+            }
+        
+        # Validate UUID format
+        if not self._is_valid_uuid(collection_id):
+            logger.error(f"Invalid collection_id UUID format: {collection_id}")
+            return {
+                'success': False,
+                'error': 'Invalid collection ID format',
+                'error_code': 'INVALID_COLLECTION_ID'
+            }
+            
+        if not self._is_valid_uuid(saved_item_id):
+            logger.error(f"Invalid saved_item_id UUID format: {saved_item_id}")
+            return {
+                'success': False,
+                'error': 'Invalid saved item ID format. This item may not be properly saved to your wishlist.',
+                'error_code': 'INVALID_SAVED_ITEM_ID'
+            }
+        
         try:
             # Verify the collection belongs to the user
+            logger.debug(f"Verifying collection ownership: {collection_id} for user {user_id}")
             collection = self.get_collection_by_id(collection_id, user_id)
             if not collection:
                 logger.warning(f"Collection {collection_id} not found or not owned by user {user_id}")
@@ -994,26 +1023,32 @@ class DatabaseService:
                 }
             
             # Verify the saved item belongs to the user
+            logger.debug(f"Verifying saved item ownership: {saved_item_id} for user {user_id}")
             saved_item_response = (self.service_client.table("user_saved_items")
                                  .select("id")
                                  .eq("id", saved_item_id)
                                  .eq("user_id", user_id)
                                  .execute())
             
+            logger.debug(f"Saved item query result: {saved_item_response.data}")
+            
             if not saved_item_response.data:
                 logger.warning(f"Saved item {saved_item_id} not found or not owned by user {user_id}")
                 return {
                     'success': False,
-                    'error': f'Saved item not found or access denied',
+                    'error': f'Saved item not found or access denied. Please refresh the page and try again.',
                     'error_code': 'SAVED_ITEM_NOT_FOUND'
                 }
             
             # Check if item is already in the collection
+            logger.debug(f"Checking if item already exists in collection: collection_id={collection_id}, saved_item_id={saved_item_id}")
             existing_response = (self.service_client.table("collection_items")
                                .select("id")
                                .eq("collection_id", collection_id)
                                .eq("saved_item_id", saved_item_id)
                                .execute())
+            
+            logger.debug(f"Existing item check result: {existing_response.data}")
             
             if existing_response.data:
                 logger.warning(f"Item {saved_item_id} is already in collection {collection_id}")
@@ -1041,17 +1076,23 @@ class DatabaseService:
                 "saved_item_id": saved_item_id,
                 "position": next_position
             }
+            logger.debug(f"Inserting collection item data: {collection_item_data}")
+            
             response = (self.service_client.table("collection_items")
                        .insert(collection_item_data)
                        .execute())
             
+            logger.debug(f"Insert response: {response.data}")
+            
             if response.data:
+                logger.info(f"Successfully added item {saved_item_id} to collection {collection_id}")
                 return {
                     'success': True,
                     'error': None,
                     'error_code': None
                 }
             else:
+                logger.error(f"Insert returned no data for item {saved_item_id} to collection {collection_id}")
                 return {
                     'success': False,
                     'error': 'Failed to insert item into collection',
@@ -1059,12 +1100,30 @@ class DatabaseService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error adding item {saved_item_id} to collection {collection_id}: {e}")
-            return {
-                'success': False,
-                'error': f'Database error: {str(e)}',
-                'error_code': 'DATABASE_ERROR'
-            }
+            error_message = str(e)
+            logger.error(f"Exception adding item {saved_item_id} to collection {collection_id}: {error_message}")
+            
+            # Check for specific database constraint violations
+            if 'duplicate key' in error_message.lower() or 'unique constraint' in error_message.lower():
+                logger.warning(f"Duplicate key constraint violation: {error_message}")
+                return {
+                    'success': False,
+                    'error': 'Item is already in this collection',
+                    'error_code': 'ITEM_ALREADY_IN_COLLECTION'
+                }
+            elif 'foreign key' in error_message.lower():
+                logger.warning(f"Foreign key constraint violation: {error_message}")
+                return {
+                    'success': False,
+                    'error': 'Invalid collection or saved item reference',
+                    'error_code': 'FOREIGN_KEY_VIOLATION'
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f'Database error: {error_message}',
+                    'error_code': 'DATABASE_ERROR'
+                }
 
     def remove_item_from_collection(self, collection_id: str, saved_item_id: str, user_id: str) -> bool:
         """Remove a saved item from a collection"""

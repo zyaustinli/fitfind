@@ -177,9 +177,16 @@ export function AddToCollectionModal({
         // Check if it's the specific "already in collection" error
         const hasAlreadyInCollectionError = failedResults.some(r => 
           r.error && (
-            r.error.message?.includes('already be in the collection') ||
-            r.error.message?.includes('already in the collection') ||
-            r.error.message?.includes('not found')
+            (r.error instanceof Error && (
+              r.error.message?.includes('already be in the collection') ||
+              r.error.message?.includes('already in the collection') ||
+              r.error.message?.includes('not found')
+            )) ||
+            (typeof r.error === 'string' && (
+              r.error.includes('already be in the collection') ||
+              r.error.includes('already in the collection') ||
+              r.error.includes('not found')
+            ))
           )
         );
         

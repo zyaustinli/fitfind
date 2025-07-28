@@ -529,6 +529,12 @@ export function useCollections(options: UseCollectionsOptions = {}): UseCollecti
           userFriendlyError = 'Collection not found. Please refresh the page and try again.';
         } else if (errorCode === 'ITEM_ALREADY_IN_COLLECTION') {
           userFriendlyError = 'This item is already in the selected collection.';
+        } else if (errorCode === 'INVALID_SAVED_ITEM_ID') {
+          userFriendlyError = 'Invalid item ID format. This may be a temporary item that needs to be refreshed. Please refresh the page and try again.';
+        } else if (errorCode === 'INVALID_COLLECTION_ID') {
+          userFriendlyError = 'Invalid collection ID format. Please refresh the page and try again.';
+        } else if (errorCode === 'FOREIGN_KEY_VIOLATION') {
+          userFriendlyError = 'Invalid collection or item reference. Please refresh the page and try again.';
         }
         
         const error = new Error(userFriendlyError);

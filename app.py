@@ -804,6 +804,18 @@ def add_item_to_collection(collection_id):
             elif error_code == 'ITEM_ALREADY_IN_COLLECTION':
                 status_code = 409
                 error_message = 'Item is already in this collection'
+            elif error_code == 'INVALID_PARAMETERS':
+                status_code = 400
+                error_message = 'Invalid request parameters'
+            elif error_code == 'INVALID_COLLECTION_ID':
+                status_code = 400
+                error_message = 'Invalid collection ID format'
+            elif error_code == 'INVALID_SAVED_ITEM_ID':
+                status_code = 400
+                error_message = 'Invalid saved item ID. Please refresh the page and try again.'
+            elif error_code == 'FOREIGN_KEY_VIOLATION':
+                status_code = 400
+                error_message = 'Invalid collection or item reference'
             elif error_code == 'DATABASE_ERROR':
                 status_code = 500
                 error_message = 'Database error occurred'
