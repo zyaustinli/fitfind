@@ -94,6 +94,23 @@ export function SaveNotification({
     }
   }, [show, onClose]);
 
+  // Sync savedWishlistItem prop changes and reset internal state
+  useEffect(() => {
+    console.log('SaveNotification: savedWishlistItem prop changed:', {
+      newSavedWishlistItemId: savedWishlistItem?.id,
+      currentWishlistItemId: wishlistItem?.id,
+      show
+    });
+    
+    // Reset internal wishlist item state when savedWishlistItem prop changes
+    if (show && savedWishlistItem?.id !== wishlistItem?.id) {
+      console.log('SaveNotification: Resetting internal wishlist item state due to prop change');
+      setWishlistItem(null);
+      setShowCollectionModal(false);
+      setIsLoadingModal(false);
+    }
+  }, [savedWishlistItem?.id, show, wishlistItem?.id]);
+
   const handleManageClick = async () => {
     // Prevent multiple clicks while loading
     if (isLoadingModal) {
@@ -111,13 +128,26 @@ export function SaveNotification({
     });
 
     try {
-      // First priority: Use the savedWishlistItem if available (from recent save)
+      // First priority: Use the savedWishlistItem if available AND valid (from recent save)
       if (savedWishlistItem) {
-        console.log('SaveNotification: Using saved wishlist item:', savedWishlistItem.id);
-        setWishlistItem(savedWishlistItem);
-        setShowCollectionModal(true);
-        setIsVisible(false);
-        return;
+        console.log('SaveNotification: Validating saved wishlist item:', savedWishlistItem.id);
+        
+        // Validate that the saved wishlist item ID still exists in current wishlist
+        const isValidWishlistItem = wishlist.some(item => item.id === savedWishlistItem.id);
+        
+        if (isValidWishlistItem) {
+          console.log('SaveNotification: Using validated saved wishlist item:', savedWishlistItem.id);
+          setWishlistItem(savedWishlistItem);
+          setShowCollectionModal(true);
+          setIsVisible(false);
+          return;
+        } else {
+          console.warn('SaveNotification: Saved wishlist item ID is stale, falling back to search:', {
+            staleId: savedWishlistItem.id,
+            currentWishlistIds: wishlist.map(item => item.id)
+          });
+          // Continue to next priority level instead of using stale ID
+        }
       }
 
       // Second priority: Try to find it in current wishlist state

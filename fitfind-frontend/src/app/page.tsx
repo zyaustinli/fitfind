@@ -34,7 +34,7 @@ export default function Home() {
 
   const { user } = useAuth();
   const { addItem, removeItem, isInWishlist, checkStatus, initialLoadStatus, setInitialStatus } = useWishlist({});
-  const { showNotification, savedItem, savedWishlistItem, notificationMessage, showSaveNotification, hideSaveNotification } = useSaveNotification();
+  const { showNotification, savedItem, savedWishlistItem, notificationMessage, showSaveNotification, hideSaveNotification, clearNotificationState } = useSaveNotification();
 
   const handleImageSelect = useCallback((image: UploadedImage) => {
     setUploadedImage(image);
@@ -200,9 +200,15 @@ export default function Home() {
       if (success) {
         // Update local state to show unsaved status immediately
         item.is_saved = false;
+        
+        // Clear notification state if the removed item matches the currently saved item
+        if (savedItem?.product_id === item.product_id) {
+          console.log('handleRemoveItem: Clearing notification state for removed item');
+          clearNotificationState();
+        }
       }
     }
-  }, [user, removeItem]);
+  }, [user, removeItem, savedItem?.product_id, clearNotificationState]);
 
   const isItemSaved = useCallback((item: ClothingItem) => {
     // This function is now guaranteed to have the correct data

@@ -138,13 +138,29 @@ export function AddToCollectionModal({
             collectionName: collection?.name,
             error: err
           });
-          return { collectionId, collectionName: collection?.name, success: false, error: err };
+          
+          // Check if this is an "invalid saved item ID" error
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const isInvalidIdError = errorMessage.toLowerCase().includes('invalid') && 
+                                  (errorMessage.toLowerCase().includes('saved item') || 
+                                   errorMessage.toLowerCase().includes('item id') ||
+                                   errorMessage.toLowerCase().includes('not found'));
+          
+          if (isInvalidIdError) {
+            console.warn('AddToCollectionModal: Detected invalid saved item ID error:', {
+              itemId: item.id,
+              error: errorMessage
+            });
+          }
+          
+          return { collectionId, collectionName: collection?.name, success: false, error: err, isInvalidIdError };
         }
       });
 
       const results = await Promise.all(promises);
       const successfulResults = results.filter(r => r.success);
       const failedResults = results.filter(r => !r.success);
+      const invalidIdResults = results.filter(r => !r.success && 'isInvalidIdError' in r && r.isInvalidIdError);
 
       console.log('AddToCollectionModal: Operation complete', { 
         totalCollections: selectedCollections.size,
@@ -168,32 +184,40 @@ export function AddToCollectionModal({
         setError(errorMsg);
       } else {
         // All failed
-        const errorDetails = failedResults.map(r => 
-          `${r.collectionName}: ${r.error instanceof Error ? r.error.message : 'Unknown error'}`
-        ).join('; ');
+        console.error('AddToCollectionModal: All additions failed', { 
+          failedResults,
+          invalidIdCount: invalidIdResults.length
+        });
         
-        console.error('AddToCollectionModal: All additions failed', { errorDetails });
-        
-        // Check if it's the specific "already in collection" error
-        const hasAlreadyInCollectionError = failedResults.some(r => 
-          r.error && (
-            (r.error instanceof Error && (
-              r.error.message?.includes('already be in the collection') ||
-              r.error.message?.includes('already in the collection') ||
-              r.error.message?.includes('not found')
-            )) ||
-            (typeof r.error === 'string' && (
-              r.error.includes('already be in the collection') ||
-              r.error.includes('already in the collection') ||
-              r.error.includes('not found')
-            ))
-          )
-        );
-        
-        if (hasAlreadyInCollectionError) {
-          setError("This item may already be in the selected collection(s) or there was a synchronization issue. Please try refreshing the page and try again.");
+        // Provide specific error message for invalid ID errors
+        if (invalidIdResults.length > 0) {
+          console.error('AddToCollectionModal: Invalid saved item ID detected');
+          setError("This item appears to have been removed and re-saved, causing an ID mismatch. Please close this dialog, find the item in your wishlist, and try adding it to collections from there.");
         } else {
-          setError(`Failed to add item to collections: ${errorDetails}`);
+          // Check if it's the "already in collection" error
+          const hasAlreadyInCollectionError = failedResults.some(r => 
+            r.error && (
+              (r.error instanceof Error && (
+                r.error.message?.includes('already be in the collection') ||
+                r.error.message?.includes('already in the collection') ||
+                r.error.message?.includes('not found')
+              )) ||
+              (typeof r.error === 'string' && (
+                r.error.includes('already be in the collection') ||
+                r.error.includes('already in the collection') ||
+                r.error.includes('not found')
+              ))
+            )
+          );
+          
+          if (hasAlreadyInCollectionError) {
+            setError("This item may already be in the selected collection(s) or there was a synchronization issue. Please try refreshing the page and try again.");
+          } else {
+            const errorDetails = failedResults.map(r => 
+              `${r.collectionName}: ${r.error instanceof Error ? r.error.message : 'Unknown error'}`
+            ).join('; ');
+            setError(`Failed to add item to collections: ${errorDetails}`);
+          }
         }
       }
     } catch (err) {
